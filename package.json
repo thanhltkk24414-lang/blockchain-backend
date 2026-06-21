@@ -1,0 +1,38 @@
+{
+  "name": "blockchain-backend",
+  "version": "1.0.0",
+  "description": "��#\u0000 \u0000S\u0000h\u0000a\u0000r\u0000e\u0000V\u0000o\u0000l\u0000t\u0000 \u0000B\u0000a\u0000c\u0000k\u0000e\u0000n\u0000d\u0000\r\u0000 \u0000",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/thanhltkk24414-lang/blockchain-backend.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/thanhltkk24414-lang/blockchain-backend/issues"
+  },
+  "homepage": "https://github.com/thanhltkk24414-lang/blockchain-backend#readme",
+  "devDependencies": {
+    "@nomicfoundation/hardhat-ethers": "^4.0.13",
+    "@nomicfoundation/hardhat-toolbox": "^7.0.0",
+    "@openzeppelin/contracts": "^5.6.1",
+    "ethers": "^6.17.0",
+    "hardhat": "^3.9.0",
+    "nodemon": "^3.1.14"
+  },
+  "dependencies": {
+    "cors": "^2.8.6",
+    "dotenv": "^17.4.2",
+    "express": "^5.2.1",
+    "helmet": "^8.2.0",
+    "mongoose": "^9.7.1",
+    "morgan": "^1.11.0",
+    "winston": "^3.19.0"
+  }
+}
