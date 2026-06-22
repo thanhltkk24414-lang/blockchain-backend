@@ -1,3 +1,5 @@
+// THÊM DÒNG NÀY VÀO ĐẦU FILE
+const contractService = require('../services/blockchain/contractService');
 // 📄 DÁN VÀO src/controllers/userController.js
 const User = require('../models/User');
 const logger = require('../utils/logger');
@@ -202,5 +204,49 @@ const userController = {
     }
   }
 };
+// 📄 THÊM HÀM NÀY VÀO userController (trước module.exports)
 
+/**
+ * GET /api/users/sync/:address
+ * 📝 Đồng bộ reputation từ blockchain
+ */
+syncReputation: async (req, res) => {
+  try {
+    const { address } = req.params;
+    
+    const user = await User.findOne({ walletAddress: address.toLowerCase() });
+    if (!user) {
+      return res.status(404).json({ 
+        success: false, 
+        error: 'User not found' 
+      });
+    }
+
+    // Lấy từ on-chain
+    const onChainScore = await contractService.getReputation(address);
+    const onChainTier = await contractService.getTier(address);
+    
+    const tierMap = ['Restricted', 'Warning', 'Normal', 'Trusted'];
+    
+    if (onChainScore !== null && onChainScore !== user.reputation.score) {
+      user.reputation.score = onChainScore;
+      user.reputation.tier = tierMap[onChainTier] || 'Normal';
+      await user.save();
+      
+      logger.info(`✅ Reputation synced for ${address}: ${onChainScore}`);
+    }
+
+    res.json({
+      success: true,
+      message: 'Reputation synced from blockchain',
+      reputation: user.reputation
+    });
+  } catch (error) {
+    logger.error('Sync reputation error:', error);
+    res.status(500).json({ 
+      success: false, 
+      error: error.message 
+    });
+  }
+}
 module.exports = userController;
