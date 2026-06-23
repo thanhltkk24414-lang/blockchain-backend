@@ -11,25 +11,27 @@ const logger = require('./utils/logger');
 const PORT = process.env.PORT || 5000;
 
 async function startServer() {
-  try {
-    await connectDB.connect();
+  const mongoConnected = await connectDB.connect();
 
-    app.listen(PORT, async () => {
-      logger.info(`Server running on port ${PORT}`);
-      logger.info(`Environment: ${process.env.NODE_ENV || 'development'}`);
+  app.listen(PORT, async () => {
+    logger.info(`Server running on port ${PORT}`);
+    logger.info(`Environment: ${process.env.NODE_ENV || 'development'}`);
 
-      try {
-        await eventIndexer.start();
-        await realtimeListener.start();
-        claimTimeoutCron.start();
-      } catch (bgError) {
-        logger.error('Background services failed to start:', bgError);
-      }
-    });
-  } catch (error) {
-    logger.error('Failed to start server:', error);
-    process.exit(1);
-  }
+    if (!mongoConnected) {
+      logger.warn(
+        'Background services skipped (event indexer, realtime listener, claim-timeout cron) — MongoDB not connected'
+      );
+      return;
+    }
+
+    try {
+      await eventIndexer.start();
+      await realtimeListener.start();
+      claimTimeoutCron.start();
+    } catch (bgError) {
+      logger.error('Background services failed to start:', bgError);
+    }
+  });
 }
 
 startServer();
