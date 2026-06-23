@@ -1,12 +1,17 @@
 {
-  "name": "blockchain-backend",
-  "version": "1.0.0",
-  "description": "ShareVolt Freelance DApp backend API",
+  "name": "fapex-backend",
+  "version": "1.0.1",
+  "description": "Fapex — Web3 Freelance Platform backend API",
   "main": "src/server.js",
   "scripts": {
     "start": "node src/server.js",
     "dev": "nodemon src/server.js",
-    "test": "node scripts/test-ipfs-pinata.js"
+    "docker:mongo": "node scripts/docker-mongo.js",
+    "test": "node scripts/test-ipfs-pinata.js",
+    "test:auth": "node scripts/test-auth-load.js",
+    "test:siwe": "node scripts/test-siwe-auth.js",
+    "test:siwe:integration": "node scripts/test-siwe-auth.js --integration",
+    "test:api": "node scripts/test-api-smoke.js"
   },
   "repository": {
     "type": "git",
@@ -32,6 +37,7 @@
     "axios": "^1.18.0",
     "cors": "^2.8.6",
     "dotenv": "^17.4.2",
+    "ethers": "^6.17.0",
     "express": "^5.2.1",
     "express-validator": "^7.2.1",
     "form-data": "^4.0.6",
@@ -41,6 +47,7 @@
     "morgan": "^1.11.0",
     "multer": "^1.4.5-lts.2",
     "node-cron": "^3.0.3",
+    "siwe": "^3.0.0",
     "winston": "^3.19.0"
   }
 }

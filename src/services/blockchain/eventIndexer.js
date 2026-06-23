@@ -1,4 +1,3 @@
-// 📄 TOÀN BỘ FILE src/services/blockchain/eventIndexer.js
 const cron = require('node-cron');
 const Job = require('../../models/Job');
 const User = require('../../models/User');
@@ -8,28 +7,57 @@ const blockchain = require('../../config/blockchain');
 const contractService = require('./contractService');
 const logger = require('../../utils/logger');
 
+const DEFAULT_BATCH_SIZE = 100;
+const DEFAULT_POLL_CRON = '0 */2 * * * *'; // every 2 minutes
+const RPC_DELAY_MS = 500;
+const MAX_BACKOFF_MS = 60_000;
+
+function delay(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function isRateLimitError(error) {
+  const code = error?.code ?? error?.error?.code;
+  const message = String(error?.message || error?.shortMessage || error || '');
+  return code === -32005 || /too many requests/i.test(message);
+}
+
 /**
- * 📝 Event Indexer
- * Đồng bộ dữ liệu từ blockchain vào database
+ * Event Indexer — sync on-chain events into MongoDB.
+ * Set ENABLE_EVENT_INDEXER=false in .env for local Postman testing (skips RPC polling).
  */
 class EventIndexer {
   constructor() {
     this.isRunning = false;
     this.lastBlock = 0;
-    this.batchSize = 1000;
+    this.batchSize = Number(process.env.INDEXER_BATCH_SIZE) || DEFAULT_BATCH_SIZE;
+    this.pollCron = process.env.INDEXER_POLL_CRON || DEFAULT_POLL_CRON;
+    this.rpcDelayMs = Number(process.env.INDEXER_RPC_DELAY_MS) || RPC_DELAY_MS;
+    this.backoffMs = 0;
+  }
+
+  isEnabled() {
+    const flag = process.env.ENABLE_EVENT_INDEXER;
+    if (flag === undefined || flag === '') return true;
+    return !['false', '0', 'no', 'off'].includes(String(flag).toLowerCase());
   }
 
   async start() {
+    if (!this.isEnabled()) {
+      logger.info('Event indexer disabled (ENABLE_EVENT_INDEXER=false)');
+      return;
+    }
+
     await blockchain.initialize();
     const state = await IndexerState.findOne({ id: 'lastBlock' });
     if (state) {
       this.lastBlock = state.blockNumber;
     }
 
-    cron.schedule('*/30 * * * * *', async () => {
+    cron.schedule(this.pollCron, async () => {
       if (this.isRunning) return;
       this.isRunning = true;
-      
+
       try {
         await this.indexEvents();
       } catch (error) {
@@ -38,55 +66,94 @@ class EventIndexer {
         this.isRunning = false;
       }
     });
-    
-    setTimeout(() => this.indexEvents(), 5000);
-    logger.info('📡 Event indexer started');
+
+    setTimeout(() => this.indexEvents(), 10_000);
+    logger.info(
+      `Event indexer started (batch=${this.batchSize}, cron="${this.pollCron}", rpcDelay=${this.rpcDelayMs}ms)`
+    );
+  }
+
+  async queryFilterWithBackoff(contract, filter, fromBlock, toBlock) {
+    let attempt = 0;
+    const maxAttempts = 5;
+
+    while (attempt < maxAttempts) {
+      try {
+        if (this.backoffMs > 0) {
+          await delay(this.backoffMs);
+        }
+        const events = await contract.queryFilter(filter, fromBlock, toBlock);
+        this.backoffMs = 0;
+        return events;
+      } catch (error) {
+        if (!isRateLimitError(error)) {
+          throw error;
+        }
+
+        attempt += 1;
+        const waitMs = Math.min(
+          MAX_BACKOFF_MS,
+          this.rpcDelayMs * 2 ** attempt
+        );
+        this.backoffMs = waitMs;
+        logger.warn(
+          `RPC rate limit (eth_getLogs), backing off ${waitMs}ms (attempt ${attempt}/${maxAttempts})`
+        );
+        await delay(waitMs);
+      }
+    }
+
+    throw new Error('RPC rate limit exceeded after retries');
   }
 
   async indexEvents() {
     try {
       const provider = blockchain.getProvider();
       const currentBlock = await provider.getBlockNumber();
-      const fromBlock = this.lastBlock || Math.max(0, currentBlock - 10000);
-      
+      const fromBlock = this.lastBlock || Math.max(0, currentBlock - 5000);
+
       if (currentBlock <= fromBlock) return;
-      
+
       const toBlock = Math.min(currentBlock, fromBlock + this.batchSize);
-      
-      logger.info(`📡 Indexing events from ${fromBlock} to ${toBlock}`);
-      
+
+      logger.info(`Indexing events from ${fromBlock} to ${toBlock}`);
+
       await this.indexJobCreated(fromBlock, toBlock);
+      await delay(this.rpcDelayMs);
       await this.indexJobStatusUpdated(fromBlock, toBlock);
+      await delay(this.rpcDelayMs);
       await this.indexFreelancerAssigned(fromBlock, toBlock);
+      await delay(this.rpcDelayMs);
       await this.indexEscrowEvents(fromBlock, toBlock);
+      await delay(this.rpcDelayMs);
       await this.indexDisputeEvents(fromBlock, toBlock);
-      
+
       this.lastBlock = toBlock;
       await IndexerState.findOneAndUpdate(
         { id: 'lastBlock' },
         { blockNumber: toBlock, updatedAt: new Date() },
         { upsert: true }
       );
-      logger.info(`✅ Indexed up to block ${toBlock}`);
+      logger.info(`Indexed up to block ${toBlock}`);
     } catch (error) {
+      if (isRateLimitError(error)) {
+        logger.warn('Index events paused due to RPC rate limit; will retry on next poll');
+        return;
+      }
       logger.error('Index events error:', error);
     }
   }
 
-  // =============================================
-  // JOB CREATED
-  // =============================================
-  
   async indexJobCreated(fromBlock, toBlock) {
     try {
       const contract = blockchain.getContract('JobRegistry');
       const filter = contract.filters.JobCreated();
-      const events = await contract.queryFilter(filter, fromBlock, toBlock);
+      const events = await this.queryFilterWithBackoff(contract, filter, fromBlock, toBlock);
 
       for (const event of events) {
         const { jobId, client, contractValue } = event.args;
         const jobNumber = Number(jobId);
-        
+
         const existing = await Job.findOne({ onchainJobId: jobNumber });
         if (existing) continue;
 
@@ -103,37 +170,34 @@ class EventIndexer {
           deliverableCID: jobData.deliverableCID,
           isActive: true,
           lastSyncedBlock: toBlock,
-          isSynced: true
+          isSynced: true,
         });
-        
+
         await job.save();
-        logger.info(`✅ Job ${jobNumber} synced from chain`);
+        logger.info(`Job ${jobNumber} synced from chain`);
       }
     } catch (error) {
+      if (isRateLimitError(error)) throw error;
       logger.error('Index JobCreated error:', error);
     }
   }
 
-  // =============================================
-  // JOB STATUS UPDATED
-  // =============================================
-  
   async indexJobStatusUpdated(fromBlock, toBlock) {
     try {
       const contract = blockchain.getContract('JobRegistry');
       const filter = contract.filters.JobStatusUpdated();
-      const events = await contract.queryFilter(filter, fromBlock, toBlock);
+      const events = await this.queryFilterWithBackoff(contract, filter, fromBlock, toBlock);
 
       for (const event of events) {
         const { jobId, newStatus } = event.args;
         const jobNumber = Number(jobId);
-        
+
         const job = await Job.findOne({ onchainJobId: jobNumber });
         if (!job) continue;
 
         const status = this.mapStatus(Number(newStatus));
         job.status = status;
-        
+
         if (status === 'ASSIGNED') {
           job.assignedAt = Math.floor(Date.now() / 1000);
         } else if (status === 'SUBMITTED') {
@@ -142,31 +206,28 @@ class EventIndexer {
           job.isActive = false;
           job.completedAt = Math.floor(Date.now() / 1000);
         }
-        
+
         job.lastSyncedBlock = toBlock;
         await job.save();
-        
-        logger.info(`✅ Job ${jobNumber} status updated to ${status}`);
+
+        logger.info(`Job ${jobNumber} status updated to ${status}`);
       }
     } catch (error) {
+      if (isRateLimitError(error)) throw error;
       logger.error('Index JobStatusUpdated error:', error);
     }
   }
 
-  // =============================================
-  // FREELANCER ASSIGNED
-  // =============================================
-  
   async indexFreelancerAssigned(fromBlock, toBlock) {
     try {
       const contract = blockchain.getContract('JobRegistry');
       const filter = contract.filters.FreelancerAssigned();
-      const events = await contract.queryFilter(filter, fromBlock, toBlock);
+      const events = await this.queryFilterWithBackoff(contract, filter, fromBlock, toBlock);
 
       for (const event of events) {
         const { jobId, freelancer } = event.args;
         const jobNumber = Number(jobId);
-        
+
         const job = await Job.findOne({ onchainJobId: jobNumber });
         if (!job) continue;
 
@@ -174,24 +235,26 @@ class EventIndexer {
         await this.ensureUser(freelancer);
         job.lastSyncedBlock = toBlock;
         await job.save();
-        
-        logger.info(`✅ Freelancer assigned to job ${jobNumber}`);
+
+        logger.info(`Freelancer assigned to job ${jobNumber}`);
       }
     } catch (error) {
+      if (isRateLimitError(error)) throw error;
       logger.error('Index FreelancerAssigned error:', error);
     }
   }
-
-  // =============================================
-  // ESCROW EVENTS (EscrowVault)
-  // =============================================
 
   async indexEscrowEvents(fromBlock, toBlock) {
     try {
       const contract = blockchain.getContract('EscrowVault');
 
       const depositedFilter = contract.filters.EscrowDeposited();
-      const depositedEvents = await contract.queryFilter(depositedFilter, fromBlock, toBlock);
+      const depositedEvents = await this.queryFilterWithBackoff(
+        contract,
+        depositedFilter,
+        fromBlock,
+        toBlock
+      );
       for (const event of depositedEvents) {
         const jobId = Number(event.args.jobId);
         const job = await Job.findOne({ onchainJobId: jobId });
@@ -202,8 +265,15 @@ class EventIndexer {
         logger.info(`EscrowDeposited synced for job ${jobId}`);
       }
 
+      await delay(this.rpcDelayMs);
+
       const releasedFilter = contract.filters.FundsReleased();
-      const releasedEvents = await contract.queryFilter(releasedFilter, fromBlock, toBlock);
+      const releasedEvents = await this.queryFilterWithBackoff(
+        contract,
+        releasedFilter,
+        fromBlock,
+        toBlock
+      );
       for (const event of releasedEvents) {
         const jobId = Number(event.args.jobId);
         const job = await Job.findOne({ onchainJobId: jobId });
@@ -214,8 +284,15 @@ class EventIndexer {
         logger.info(`FundsReleased synced for job ${jobId}`);
       }
 
+      await delay(this.rpcDelayMs);
+
       const disputeFilter = contract.filters.DisputeRaised();
-      const disputeEvents = await contract.queryFilter(disputeFilter, fromBlock, toBlock);
+      const disputeEvents = await this.queryFilterWithBackoff(
+        contract,
+        disputeFilter,
+        fromBlock,
+        toBlock
+      );
       for (const event of disputeEvents) {
         const jobId = Number(event.args.jobId);
         const job = await Job.findOne({ onchainJobId: jobId });
@@ -227,26 +304,27 @@ class EventIndexer {
         logger.info(`DisputeRaised synced for job ${jobId}`);
       }
     } catch (error) {
+      if (isRateLimitError(error)) throw error;
       logger.error('Index Escrow events error:', error);
     }
   }
 
-  // =============================================
-  // DISPUTE EVENTS
-  // =============================================
-  
   async indexDisputeEvents(fromBlock, toBlock) {
     try {
       const contract = blockchain.getContract('ArbitratorPanel');
-      
-      // DisputeSetup
+
       const setupFilter = contract.filters.DisputeSetup();
-      const setupEvents = await contract.queryFilter(setupFilter, fromBlock, toBlock);
+      const setupEvents = await this.queryFilterWithBackoff(
+        contract,
+        setupFilter,
+        fromBlock,
+        toBlock
+      );
 
       for (const event of setupEvents) {
         const { jobId, arbitrators } = event.args;
         const jobNumber = Number(jobId);
-        
+
         const job = await Job.findOne({ onchainJobId: jobNumber });
         if (!job) continue;
 
@@ -258,31 +336,37 @@ class EventIndexer {
           onchainJobId: jobNumber,
           initiatorAddress: job.clientAddress,
           respondentAddress: job.freelancerAddress,
-          arbitrators: arbitrators.map(addr => ({
+          arbitrators: arbitrators.map((addr) => ({
             address: addr.toLowerCase(),
             vote: 'UNDECIDED',
-            isRevealed: false
+            isRevealed: false,
           })),
           status: 'OPEN',
-          openedAt: new Date()
+          openedAt: new Date(),
         });
-        
+
         await dispute.save();
         job.disputeId = dispute._id;
         job.isDisputed = true;
         await job.save();
-        
-        logger.info(`✅ Dispute created for job ${jobNumber}`);
+
+        logger.info(`Dispute created for job ${jobNumber}`);
       }
-      
-      // DisputeFinalized
+
+      await delay(this.rpcDelayMs);
+
       const finalFilter = contract.filters.DisputeFinalized();
-      const finalEvents = await contract.queryFilter(finalFilter, fromBlock, toBlock);
+      const finalEvents = await this.queryFilterWithBackoff(
+        contract,
+        finalFilter,
+        fromBlock,
+        toBlock
+      );
 
       for (const event of finalEvents) {
         const { jobId, result, round } = event.args;
         const jobNumber = Number(jobId);
-        
+
         const dispute = await Dispute.findOne({ onchainJobId: jobNumber });
         if (!dispute) continue;
 
@@ -293,7 +377,7 @@ class EventIndexer {
         dispute.status = 'FINALIZED';
         dispute.round = Number(round);
         await dispute.save();
-        
+
         const job = await Job.findOne({ onchainJobId: jobNumber });
         if (job) {
           if (Number(result) === 1) {
@@ -305,18 +389,15 @@ class EventIndexer {
           }
           await job.save();
         }
-        
-        logger.info(`✅ Dispute finalized for job ${jobNumber}: ${dispute.result}`);
+
+        logger.info(`Dispute finalized for job ${jobNumber}: ${dispute.result}`);
       }
     } catch (error) {
+      if (isRateLimitError(error)) throw error;
       logger.error('Index Dispute events error:', error);
     }
   }
 
-  // =============================================
-  // HELPERS
-  // =============================================
-  
   mapStatus(status) {
     const map = {
       0: 'OPEN',
@@ -326,7 +407,7 @@ class EventIndexer {
       4: 'DISPUTED',
       5: 'COMPLETED',
       6: 'REFUNDED',
-      7: 'CANCELLED'
+      7: 'CANCELLED',
     };
     return map[status] || 'OPEN';
   }
@@ -337,17 +418,17 @@ class EventIndexer {
       const score = await contractService.getReputation(address);
       const tier = await contractService.getTier(address);
       const tierMap = ['Restricted', 'Warning', 'Normal', 'Trusted'];
-      
+
       const user = new User({
         walletAddress: address.toLowerCase(),
         username: `user_${address.slice(0, 8)}`,
         reputation: {
           score: score || 100,
-          tier: tierMap[tier] || 'Normal'
-        }
+          tier: tierMap[tier] || 'Normal',
+        },
       });
       await user.save();
-      logger.info(`✅ Created user: ${address}`);
+      logger.info(`Created user: ${address}`);
     }
     return existing;
   }
