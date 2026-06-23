@@ -7,7 +7,8 @@
 @walletAddress = 0xYourWalletAddressHere
 @authToken =
 
-# SIWE — see http://127.0.0.1:5000/siwe-sign.html → sign → "Copy JSON cho Postman"
+# SIWE — http://127.0.0.1:5000/siwe-sign.html (v4, EIP-55) → sign → "Copy JSON cho Postman"
+# After git pull: restart backend + hard refresh (Ctrl+Shift+R) if banner v4 missing.
 # Multiline SIWE messages break JSON if pasted with literal newlines into variables.
 # Recommended: copy verify-body.json.example → verify-body.json, paste copied JSON from siwe-sign page, use request 03b below.
 @siweMessage = PASTE_FULL_SIWE_MESSAGE_HERE

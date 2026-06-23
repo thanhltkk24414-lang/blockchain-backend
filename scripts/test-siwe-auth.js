@@ -139,33 +139,31 @@ async function runIntegrationTest() {
 
   console.log('Integration test wallet:', address);
 
-  const nonceRes = await request('POST', '/api/auth/nonce', { walletAddress: address });
-  if (nonceRes.status !== 200 || !nonceRes.body.success) {
-    throw new Error(`nonce failed (${nonceRes.status}): ${JSON.stringify(nonceRes.body)}`);
+  async function issueNonce() {
+    const res = await request('POST', '/api/auth/nonce', { walletAddress: address });
+    if (res.status !== 200 || !res.body.success) {
+      throw new Error(`nonce failed (${res.status}): ${JSON.stringify(res.body)}`);
+    }
+    return res.body;
   }
+
+  function buildMessage(nonceBody) {
+    return new SiweMessage({
+      domain: nonceBody.domain,
+      address: getAddress(nonceBody.walletAddress || address),
+      statement,
+      uri: nonceBody.appUrl || uri,
+      version: '1',
+      chainId: nonceBody.chainId || chainId,
+      nonce: nonceBody.nonce,
+    }).prepareMessage();
+  }
+
+  const nonce1 = await issueNonce();
   console.log('OK: nonce issued');
 
-  const siweMsg = new SiweMessage({
-    domain: nonceRes.body.domain,
-    address: getAddress(nonceRes.body.walletAddress || address),
-    statement,
-    uri: nonceRes.body.appUrl || uri,
-    version: '1',
-    chainId: nonceRes.body.chainId || chainId,
-    nonce: nonceRes.body.nonce,
-  });
-  const message = siweMsg.prepareMessage();
+  const message = buildMessage(nonce1);
   const signature = await wallet.signMessage(message);
-
-  const lowerMessage = message.replace(address, address.toLowerCase());
-  const badRes = await request('POST', '/api/auth/verify', {
-    message: lowerMessage,
-    signature,
-  });
-  if (badRes.status === 200 && badRes.body.success) {
-    throw new Error('lowercase message should not verify with checksum signature');
-  }
-  console.log('OK: lowercase message rejected:', (badRes.body.error || '').slice(0, 80) || badRes.status);
 
   const verifyRes = await request('POST', '/api/auth/verify', { message, signature });
   if (verifyRes.status !== 200 || !verifyRes.body.success || !verifyRes.body.token) {
@@ -173,39 +171,63 @@ async function runIntegrationTest() {
   }
   console.log('OK: verify returned JWT');
 
-  if (verifyRes.body.token) {
-    const meWithAuth = await new Promise((resolve, reject) => {
-      const url = new URL('/api/auth/me', baseUrl);
-      const lib = url.protocol === 'https:' ? https : http;
-      const req = lib.request(
-        {
-          hostname: url.hostname,
-          port: url.port,
-          path: url.pathname,
-          method: 'GET',
-          headers: { Authorization: 'Bearer ' + verifyRes.body.token },
-          timeout: 20000,
-        },
-        (res) => {
-          let data = '';
-          res.on('data', (c) => { data += c; });
-          res.on('end', () => {
-            try {
-              resolve({ status: res.statusCode, body: JSON.parse(data) });
-            } catch {
-              resolve({ status: res.statusCode, body: { raw: data } });
-            }
-          });
-        }
-      );
-      req.on('error', reject);
-      req.end();
-    });
-    if (meWithAuth.status !== 200 || !meWithAuth.body.success) {
-      throw new Error(`GET /me failed: ${JSON.stringify(meWithAuth.body)}`);
-    }
-    console.log('OK: GET /api/auth/me with token');
+  const meWithAuth = await new Promise((resolve, reject) => {
+    const url = new URL('/api/auth/me', baseUrl);
+    const lib = url.protocol === 'https:' ? https : http;
+    const req = lib.request(
+      {
+        hostname: url.hostname,
+        port: url.port,
+        path: url.pathname,
+        method: 'GET',
+        headers: { Authorization: 'Bearer ' + verifyRes.body.token },
+        timeout: 20000,
+      },
+      (res) => {
+        let data = '';
+        res.on('data', (c) => { data += c; });
+        res.on('end', () => {
+          try {
+            resolve({ status: res.statusCode, body: JSON.parse(data) });
+          } catch {
+            resolve({ status: res.statusCode, body: { raw: data } });
+          }
+        });
+      }
+    );
+    req.on('error', reject);
+    req.end();
+  });
+  if (meWithAuth.status !== 200 || !meWithAuth.body.success) {
+    throw new Error(`GET /me failed: ${JSON.stringify(meWithAuth.body)}`);
   }
+  console.log('OK: GET /api/auth/me with token');
+
+  const nonce2 = await issueNonce();
+  const message2 = buildMessage(nonce2);
+  const signature2 = await wallet.signMessage(message2);
+  const lowerJson = message2.replace(address, address.toLowerCase());
+  const normalizedRes = await request('POST', '/api/auth/verify', {
+    message: lowerJson,
+    signature: signature2,
+  });
+  if (normalizedRes.status !== 200 || !normalizedRes.body.success) {
+    throw new Error(`lowercase address line should verify after server normalization: ${JSON.stringify(normalizedRes.body)}`);
+  }
+  console.log('OK: lowercase address line normalized and verified');
+
+  const nonce3 = await issueNonce();
+  const message3 = buildMessage(nonce3);
+  const lowerMessage3 = message3.replace(address, address.toLowerCase());
+  const lowerSig = await wallet.signMessage(lowerMessage3);
+  const badRes = await request('POST', '/api/auth/verify', {
+    message: lowerMessage3,
+    signature: lowerSig,
+  });
+  if (badRes.status === 200 && badRes.body.success) {
+    throw new Error('signature over lowercase message should not verify after server checksum fix');
+  }
+  console.log('OK: lowercase-signed message rejected:', (badRes.body.error || '').slice(0, 80) || badRes.status);
 }
 
 async function main() {
