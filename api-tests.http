@@ -1,4 +1,4 @@
-# ShareVolt API — REST Client (humao.rest-client)
+# Fapex API — REST Client (humao.rest-client)
 # Install: VS Code/Cursor → Extensions → search "REST Client" (humao.rest-client)
 # Usage: open this file → click "Send Request" above each ### block
 # Windows: use 127.0.0.1 instead of localhost (avoids IPv6 hangs)

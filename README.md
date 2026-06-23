@@ -1,6 +1,6 @@
-﻿# ShareVolt Backend
+﻿# Fapex Backend
 
-Node.js API cho Freelance DApp - MongoDB cache, Pinata IPFS, dong bo su kien Sepolia.
+Node.js API cho Fapex — Web3 Freelance Platform. MongoDB cache, Pinata IPFS, dong bo su kien Sepolia.
 
 ## Chay local
 

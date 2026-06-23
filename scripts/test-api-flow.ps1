@@ -1,4 +1,4 @@
-# ShareVolt API — interactive test flow (PowerShell)
+# Fapex API — interactive test flow (PowerShell)
 # Usage:
 #   cd backend
 #   .\scripts\test-api-flow.ps1
@@ -77,7 +77,7 @@ function Show-SiweInstructions {
     Write-Host ""
 }
 
-Write-Host "ShareVolt API test flow → $BaseUrl" -ForegroundColor Green
+Write-Host "Fapex API test flow → $BaseUrl" -ForegroundColor Green
 
 if (-not $WalletAddress) {
     $WalletAddress = Read-Host "Wallet address (0x... Sepolia)"

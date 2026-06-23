@@ -1,8 +1,8 @@
 {
   "info": {
     "_postman_id": "a7f3c2e1-4b8d-4f6a-9c3e-1d2e4f6a8b0c",
-    "name": "Freelance Platform API",
-    "description": "ShareVolt backend — health, SIWE auth, IPFS metadata, jobs, arbitrator.\n\n**Prerequisites:** MongoDB (`MONGODB_URI`), JWT_SECRET, Pinata keys for IPFS uploads.\n\n**Flow:** Health → Nonce → Verify (wallet SIWE) → Me → IPFS metadata → POST job → GET jobs → Arbitrator status.\n\nUse `127.0.0.1` instead of `localhost` on Windows to avoid IPv6 hangs.",
+    "name": "Fapex API",
+    "description": "Fapex backend — health, SIWE auth, IPFS metadata, jobs, arbitrator.\n\n**Prerequisites:** MongoDB (`MONGODB_URI`), JWT_SECRET, Pinata keys for IPFS uploads.\n\n**Flow:** Health → Nonce → Verify (wallet SIWE) → Me → IPFS metadata → POST job → GET jobs → Arbitrator status.\n\nUse `127.0.0.1` instead of `localhost` on Windows to avoid IPv6 hangs.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "item": [
