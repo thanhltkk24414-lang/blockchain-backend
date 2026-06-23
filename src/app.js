@@ -1,5 +1,5 @@
 // 📄 TOÀN BỘ FILE src/app.js (THAY MỚI HOÀN TOÀN)
-require('dotenv').config();
+require('dotenv').config({ path: require('path').join(__dirname, '..', '.env') });
 const express = require('express');
 const cors = require('cors');
 const helmet = require('helmet');
