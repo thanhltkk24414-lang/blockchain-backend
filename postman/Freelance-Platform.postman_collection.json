@@ -1,0 +1,233 @@
+{
+  "info": {
+    "_postman_id": "freelance-platform-api",
+    "name": "Freelance Platform API",
+    "description": "ShareVolt backend — health, SIWE auth, IPFS metadata, jobs, arbitrator.\n\n**Prerequisites:** MongoDB (`MONGODB_URI`), JWT_SECRET, Pinata keys for IPFS uploads.\n\n**Flow:** Health → Nonce → Verify (wallet SIWE) → Me → IPFS metadata → POST job → GET jobs → Arbitrator status.\n\nUse `127.0.0.1` instead of `localhost` on Windows to avoid IPv6 hangs.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://127.0.0.1:5000"
+    }
+  ],
+  "item": [
+    {
+      "name": "01 — Health",
+      "item": [
+        {
+          "name": "GET /health",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/health",
+            "description": "Smoke test — no auth, no MongoDB required. Check `mongodb` field: `connected` means DB is ready for nonce/jobs."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "pm.test('status ok', () => pm.expect(body.status).to.eql('ok'));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "02 — Auth (SIWE + JWT)",
+      "item": [
+        {
+          "name": "POST /api/auth/nonce",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"walletAddress\": \"{{walletAddress}}\"\n}"
+            },
+            "url": "{{baseUrl}}/api/auth/nonce",
+            "description": "Requires MongoDB. Returns nonce, domain, chainId for building a SIWE message."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "  const body = pm.response.json();",
+                  "  pm.environment.set('nonce', body.nonce);",
+                  "  pm.environment.set('chainId', String(body.chainId));",
+                  "  pm.environment.set('siweDomain', body.domain);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST /api/auth/verify",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"message\": \"{{siweMessage}}\",\n  \"signature\": \"{{siweSignature}}\"\n}"
+            },
+            "url": "{{baseUrl}}/api/auth/verify",
+            "description": "**Manual SIWE step (wallet required):**\n\n1. Run **nonce** first.\n2. Build EIP-4361 message with domain=`{{siweDomain}}`, chainId=`{{chainId}}`, nonce from response, address=`{{walletAddress}}`, uri from `APP_URL` in backend `.env`.\n3. Sign with MetaMask: `signer.signMessage(message.prepareMessage())` (ethers v6) or equivalent.\n4. Paste full message string into `siweMessage` env var and hex signature into `siweSignature`.\n5. Send this request — token is saved to `authToken` automatically."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "  const body = pm.response.json();",
+                  "  if (body.token) {",
+                  "    pm.environment.set('authToken', body.token);",
+                  "  }",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /api/auth/me",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{authToken}}"
+              }
+            ],
+            "url": "{{baseUrl}}/api/auth/me",
+            "description": "Protected — requires valid JWT from verify step."
+          }
+        }
+      ]
+    },
+    {
+      "name": "03 — IPFS",
+      "item": [
+        {
+          "name": "POST /api/ipfs/upload/metadata",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{authToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"Smart Contract Audit\",\n  \"description\": \"Audit Solidity escrow contracts on Sepolia testnet.\",\n  \"category\": \"development\",\n  \"skills\": [\"Solidity\", \"Security\"],\n  \"deliverables\": \"PDF audit report with findings and remediation plan.\",\n  \"acceptanceCriteria\": \"All critical and high issues documented with reproducible PoCs.\",\n  \"clientAddress\": \"{{walletAddress}}\",\n  \"createdAt\": \"2026-06-23T00:00:00.000Z\"\n}"
+            },
+            "url": "{{baseUrl}}/api/ipfs/upload/metadata",
+            "description": "Requires auth + Pinata credentials in backend `.env`. Saves `metadataCID` to environment."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "  const body = pm.response.json();",
+                  "  if (body.metadataCID) {",
+                  "    pm.environment.set('metadataCID', body.metadataCID);",
+                  "  }",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "04 — Jobs",
+      "item": [
+        {
+          "name": "GET /api/jobs",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/jobs?page=1&limit=20",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "jobs"],
+              "query": [
+                { "key": "page", "value": "1" },
+                { "key": "limit", "value": "20" },
+                { "key": "status", "value": "OPEN", "disabled": true },
+                { "key": "category", "value": "development", "disabled": true }
+              ]
+            },
+            "description": "Public list. Requires MongoDB for data; returns empty list when DB is connected with no jobs."
+          }
+        },
+        {
+          "name": "POST /api/jobs",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{authToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"Smart Contract Audit\",\n  \"description\": \"Audit Solidity escrow contracts on Sepolia testnet for security vulnerabilities.\",\n  \"category\": \"development\",\n  \"contractValue\": 100,\n  \"duration\": 604800,\n  \"skills\": [\"Solidity\", \"Security\"],\n  \"deliverables\": \"PDF audit report with findings and remediation plan.\",\n  \"acceptanceCriteria\": \"All critical and high issues documented with reproducible PoCs.\"\n}"
+            },
+            "url": "{{baseUrl}}/api/jobs",
+            "description": "Requires auth + MongoDB + Pinata + RPC. Backend uploads metadata to IPFS and attempts on-chain `createJob`. User must exist in DB (from nonce/verify) and not be Restricted tier."
+          }
+        }
+      ]
+    },
+    {
+      "name": "05 — Arbitrator",
+      "item": [
+        {
+          "name": "GET /api/arbitrator/:address/status",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/arbitrator/{{walletAddress}}/status",
+            "description": "Public — reads on-chain stake via Sepolia RPC. No MongoDB required."
+          }
+        }
+      ]
+    }
+  ]
+}

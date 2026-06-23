@@ -42,13 +42,17 @@ app.use(morgan('dev'));
 // 📌 ROUTES
 // =============================================
 
-// Health check
+// Health check (works without MongoDB — use for smoke tests)
 app.get('/health', (req, res) => {
+  const mongoose = require('mongoose');
+  const mongoStates = ['disconnected', 'connected', 'connecting', 'disconnecting'];
+
   res.json({
     status: 'ok',
     timestamp: new Date().toISOString(),
     uptime: process.uptime(),
-    environment: process.env.NODE_ENV || 'development'
+    environment: process.env.NODE_ENV || 'development',
+    mongodb: mongoStates[mongoose.connection.readyState] || 'unknown',
   });
 });
 

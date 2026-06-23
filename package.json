@@ -7,7 +7,8 @@
     "start": "node src/server.js",
     "dev": "nodemon src/server.js",
     "test": "node scripts/test-ipfs-pinata.js",
-    "test:auth": "node scripts/test-auth-load.js"
+    "test:auth": "node scripts/test-auth-load.js",
+    "test:api": "node scripts/test-api-smoke.js"
   },
   "repository": {
     "type": "git",
