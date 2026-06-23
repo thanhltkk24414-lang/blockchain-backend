@@ -23,13 +23,13 @@ const app = express();
 // 📌 MIDDLEWARE
 // =============================================
 
-// Bảo mật (allow esm.sh for /siwe-sign.html SIWE helper)
+// Bảo mật — SIWE page uses external /js/siwe-sign.js (no inline scripts)
 app.use(helmet({
   contentSecurityPolicy: {
     directives: {
       defaultSrc: ["'self'"],
-      scriptSrc: ["'self'", 'https://esm.sh'],
-      connectSrc: ["'self'", 'https://esm.sh'],
+      scriptSrc: ["'self'"],
+      connectSrc: ["'self'"],
       styleSrc: ["'self'", "'unsafe-inline'"],
     },
   },
@@ -55,7 +55,8 @@ app.use(morgan('dev'));
 // SIWE signing helper (MetaMask needs http://, not file://)
 app.use(express.static(path.join(__dirname, '..', 'public')));
 const siweSignPage = path.join(__dirname, '..', 'public', 'siwe-sign.html');
-app.get(['/siwe-sign', '/siwe-sign.html'], (req, res) => {
+const siweSignRoutes = ['/siwe-sign', '/siwe-sign.html', '/siwe_sign', '/siwe_sign.html'];
+app.get(siweSignRoutes, (req, res) => {
   res.sendFile(siweSignPage);
 });
 
