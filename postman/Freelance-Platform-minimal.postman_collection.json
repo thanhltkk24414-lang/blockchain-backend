@@ -1,0 +1,22 @@
+{
+  "info": {
+    "_postman_id": "b8e4d3f2-5c9e-4a7b-8d4f-2e3f5a7b9c1d",
+    "name": "Freelance Platform API (Minimal)",
+    "description": "Minimal v2.1 collection for VS Code Postman extension import smoke test.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "GET /health",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/health",
+          "host": ["{{baseUrl}}"],
+          "path": ["health"]
+        }
+      }
+    }
+  ]
+}
