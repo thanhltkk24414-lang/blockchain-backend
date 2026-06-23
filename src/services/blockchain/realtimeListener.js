@@ -1,6 +1,7 @@
 const { ethers } = require('ethers');
 const Job = require('../../models/Job');
 const blockchain = require('../../config/blockchain');
+const { notifyJobChange } = require('../notifications/notificationService');
 const logger = require('../../utils/logger');
 
 const ESCROW_EVENTS = ['EscrowDeposited', 'FundsReleased', 'DisputeRaised'];
@@ -70,6 +71,17 @@ class RealtimeListener {
         job.isDisputed = true;
         await job.save();
       }
+
+      const eventTypeMap = {
+        EscrowDeposited: 'escrow:deposited',
+        FundsReleased: 'escrow:released',
+        DisputeRaised: 'escrow:dispute_raised',
+      };
+      notifyJobChange(job, eventTypeMap[eventName] || 'job:status_updated', {
+        source: 'realtime_listener',
+        transactionHash: txHash || null,
+      });
+
       logger.info(`Realtime sync: job ${onchainJobId} → ${status}`);
     } catch (error) {
       logger.error(`Realtime sync error (${eventName}):`, error);
