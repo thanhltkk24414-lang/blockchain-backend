@@ -4,6 +4,7 @@ tmp/
 .env
 .env.local
 .env.*.local
+verify-body.json
 *.pem
 dist/
 build/

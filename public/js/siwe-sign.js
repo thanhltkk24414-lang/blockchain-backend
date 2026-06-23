@@ -18,6 +18,7 @@
     btnConnect: document.getElementById('btnConnect'),
     btnNonce: document.getElementById('btnNonce'),
     btnSign: document.getElementById('btnSign'),
+    btnCopyPostman: document.getElementById('btnCopyPostman'),
   };
 
   let connectedAccount = null;
@@ -255,11 +256,52 @@
 
       els.outMessage.value = prepared;
       els.outSignature.value = signature;
-      setStatus('ok', 'Đã ký thành công.\nCopy message + signature sang Postman hoặc api-tests.http.');
+      els.btnCopyPostman.disabled = false;
+      setStatus('ok', 'Đã ký thành công.\nBấm "Copy JSON cho Postman" → dán vào body verify, hoặc copy từng field vào biến Postman.');
     } catch (err) {
       showError(err, 'Ký SIWE');
     } finally {
       els.btnSign.disabled = false;
+    }
+  }
+
+  function buildPostmanJson() {
+    const message = els.outMessage.value;
+    const signature = els.outSignature.value;
+    if (!message || !signature) {
+      throw new Error('Chưa có message/chữ ký — bấm "Ký với MetaMask" trước.');
+    }
+    return JSON.stringify({ message: message, signature: signature });
+  }
+
+  async function copyPostmanJson() {
+    let json;
+    try {
+      json = buildPostmanJson();
+    } catch (err) {
+      showError(err, 'Copy JSON');
+      return;
+    }
+    els.btnCopyPostman.disabled = true;
+    try {
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        await navigator.clipboard.writeText(json);
+      } else {
+        const ta = document.createElement('textarea');
+        ta.value = json;
+        ta.setAttribute('readonly', '');
+        ta.style.position = 'fixed';
+        ta.style.left = '-9999px';
+        document.body.appendChild(ta);
+        ta.select();
+        document.execCommand('copy');
+        document.body.removeChild(ta);
+      }
+      setStatus('ok', 'Đã copy JSON cho Postman.\nDán vào body POST /api/auth/verify hoặc file verify-body.json (REST Client).');
+    } catch (err) {
+      showError(err, 'Copy JSON');
+    } finally {
+      els.btnCopyPostman.disabled = false;
     }
   }
 
@@ -274,6 +316,10 @@
   els.btnSign.addEventListener('click', function (e) {
     e.preventDefault();
     signSiwe();
+  });
+  els.btnCopyPostman.addEventListener('click', function (e) {
+    e.preventDefault();
+    copyPostmanJson();
   });
 
   applyQueryParams();

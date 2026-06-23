@@ -1,0 +1,4 @@
+{
+  "message": "localhost wants you to sign in with your Ethereum account:\n0xYourWalletAddressHere\n\nSign in to Fapex\n\nURI: http://localhost:3000\nVersion: 1\nChain ID: 11155111\nNonce: paste-nonce-from-api\nIssued At: 2026-06-23T00:00:00.000Z",
+  "signature": "0xPASTE_SIGNATURE_FROM_SIWE_SIGN_PAGE"
+}

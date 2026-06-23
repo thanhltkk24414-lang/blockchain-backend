@@ -2,7 +2,7 @@
   "info": {
     "_postman_id": "a7f3c2e1-4b8d-4f6a-9c3e-1d2e4f6a8b0c",
     "name": "Fapex API",
-    "description": "Fapex backend — health, SIWE auth, IPFS metadata, jobs, arbitrator.\n\n**Prerequisites:** MongoDB (`MONGODB_URI`), JWT_SECRET, Pinata keys for IPFS uploads.\n\n**Flow:** Health → Nonce → Verify (wallet SIWE) → Me → IPFS metadata → POST job → GET jobs → Arbitrator status.\n\nUse `127.0.0.1` instead of `localhost` on Windows to avoid IPv6 hangs.",
+    "description": "Fapex backend — health, SIWE auth, IPFS metadata, jobs, arbitrator.\n\n**Prerequisites:** MongoDB (`MONGODB_URI`), JWT_SECRET, Pinata keys for IPFS uploads.\n\n**Flow:** Health → Nonce → Verify (wallet SIWE) → Me → IPFS metadata → POST job → GET jobs → Arbitrator status.\n\nUse `127.0.0.1` instead of `localhost` on Windows to avoid IPv6 hangs.\n\n**SIWE verify (multiline message):** Set `siweMessage` and `siweSignature` in environment (newlines OK). The verify request uses a **pre-request script** that builds the JSON body with `JSON.stringify` — do not paste raw `{{siweMessage}}` into the body template. Or open `http://127.0.0.1:5000/siwe-sign.html` → sign → **Copy JSON cho Postman** → paste the whole JSON as the request body.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "item": [
@@ -56,6 +56,27 @@
         },
         {
           "name": "POST /api/auth/verify",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "exec": [
+                  "const message = pm.environment.get('siweMessage') || pm.collectionVariables.get('siweMessage') || '';",
+                  "const signature = pm.environment.get('siweSignature') || pm.collectionVariables.get('siweSignature') || '';",
+                  "",
+                  "if (!message || !signature) {",
+                  "    console.warn('Set siweMessage and siweSignature in environment (multiline message is OK).');",
+                  "}",
+                  "",
+                  "pm.request.body.update(JSON.stringify({",
+                  "    message: message,",
+                  "    signature: signature",
+                  "}));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
           "request": {
             "method": "POST",
             "header": [
@@ -66,7 +87,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"message\": \"{{siweMessage}}\",\n  \"signature\": \"{{siweSignature}}\"\n}",
+              "raw": "{\n  \"message\": \"(built by pre-request script from siweMessage)\",\n  \"signature\": \"(built by pre-request script from siweSignature)\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -78,7 +99,7 @@
               "host": ["{{baseUrl}}"],
               "path": ["api", "auth", "verify"]
             },
-            "description": "**Manual SIWE step (wallet required):**\n\n1. Run **nonce** first.\n2. Build EIP-4361 message with domain=`{{siweDomain}}`, chainId=`{{chainId}}`, nonce from response, address=`{{walletAddress}}`, uri from `APP_URL` in backend `.env`.\n3. Sign with MetaMask.\n4. Paste full message string into `siweMessage` env var and hex signature into `siweSignature`.\n5. Send this request — copy `token` from response into `authToken`."
+            "description": "**Manual SIWE step (wallet required):**\n\n1. Run **nonce** first.\n2. Sign with MetaMask — easiest: open `http://127.0.0.1:5000/siwe-sign.html` → connect → fetch nonce → sign → **Copy JSON cho Postman**.\n3. **Option A (recommended):** Paste env vars `siweMessage` (full multiline EIP-4361 string) and `siweSignature` (`0x...`). A **pre-request script** builds valid JSON via `JSON.stringify` (avoids `Bad control character` when the message has newlines).\n4. **Option B:** Paste the copied JSON directly into the Body (raw) and remove/disable the pre-request script if you prefer a fixed body.\n5. Send — copy `token` from response into `authToken`.\n\n**Troubleshooting:** `Bad control character in string literal` means Postman substituted literal newlines into JSON — use env vars + this script, or paste escaped JSON from siwe-sign page."
           }
         },
         {

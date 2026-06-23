@@ -7,7 +7,9 @@
 @walletAddress = 0xYourWalletAddressHere
 @authToken =
 
-# SIWE placeholders — fill after signing with MetaMask (see docs/guides/postman-walkthrough-vi.md)
+# SIWE — see http://127.0.0.1:5000/siwe-sign.html → sign → "Copy JSON cho Postman"
+# Multiline SIWE messages break JSON if pasted with literal newlines into variables.
+# Recommended: copy verify-body.json.example → verify-body.json, paste copied JSON from siwe-sign page, use request 03b below.
 @siweMessage = PASTE_FULL_SIWE_MESSAGE_HERE
 @siweSignature = 0xPASTE_SIGNATURE_HERE
 
@@ -22,7 +24,9 @@ Content-Type: application/json
   "walletAddress": "{{walletAddress}}"
 }
 
-### 03 — POST /api/auth/verify (needs SIWE message + signature from MetaMask)
+### 03 — POST /api/auth/verify (env vars — message must be ONE line with \n escapes, or use 03b)
+# Postman users: re-import Fapex.postman_collection.json (pre-request script handles multiline env vars).
+# REST Client: literal newlines in @siweMessage will break JSON — prefer 03b or escape newlines as \n on one line.
 POST {{baseUrl}}/api/auth/verify
 Content-Type: application/json
 
@@ -30,6 +34,15 @@ Content-Type: application/json
   "message": "{{siweMessage}}",
   "signature": "{{siweSignature}}"
 }
+
+### 03b — POST /api/auth/verify (recommended — paste JSON from siwe-sign "Copy JSON cho Postman")
+# 1. cp verify-body.json.example verify-body.json
+# 2. On siwe-sign.html: sign → Copy JSON cho Postman → replace entire verify-body.json contents
+# 3. Send this request
+POST {{baseUrl}}/api/auth/verify
+Content-Type: application/json
+
+< ./verify-body.json
 
 ### 04 — GET /api/auth/me (needs JWT from verify → copy token to @authToken)
 GET {{baseUrl}}/api/auth/me

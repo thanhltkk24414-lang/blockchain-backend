@@ -69,7 +69,9 @@
     <button type="button" id="btnConnect">Kết nối MetaMask</button>
     <button type="button" id="btnNonce">Lấy nonce từ API</button>
     <button type="button" id="btnSign">Ký với MetaMask</button>
+    <button type="button" id="btnCopyPostman" disabled>Copy JSON cho Postman</button>
   </div>
+  <p class="hint">Sau khi ký: bấm <strong>Copy JSON cho Postman</strong> rồi dán nguyên khối JSON vào body request verify (hoặc giữ biến <code>siweMessage</code>/<code>siweSignature</code> — collection Postman tự <code>JSON.stringify</code>).</p>
 
   <label>SIWE message (dán vào <code>@siweMessage</code> / Postman)
     <textarea id="outMessage" readonly placeholder="Message sẽ hiện sau khi ký…"></textarea>
