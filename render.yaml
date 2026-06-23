@@ -1,0 +1,42 @@
+# Render Blueprint — import this file when creating a new Blueprint,
+# or copy settings into a manual Web Service (Docker runtime).
+services:
+  - type: web
+    name: fapex-backend
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    plan: free
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: "5000"
+      - key: MONGODB_URI
+        sync: false
+      - key: JWT_SECRET
+        sync: false
+      - key: RPC_URL
+        sync: false
+      - key: ALLOWED_ORIGINS
+        sync: false
+      - key: SIWE_DOMAIN
+        sync: false
+      - key: APP_URL
+        sync: false
+      - key: CHAIN_ID
+        value: "11155111"
+      - key: PINATA_JWT
+        sync: false
+      - key: MOCK_USDC_ADDRESS
+        sync: false
+      - key: REPUTATION_STORE_ADDRESS
+        sync: false
+      - key: PLATFORM_TREASURY_ADDRESS
+        sync: false
+      - key: JOB_REGISTRY_ADDRESS
+        sync: false
+      - key: ARBITRATOR_PANEL_ADDRESS
+        sync: false
+      - key: ESCROW_VAULT_ADDRESS
+        sync: false
