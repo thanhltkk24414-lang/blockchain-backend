@@ -36,7 +36,7 @@ router.put(
   authenticate,
   [
     body('fullName').optional().isString().trim(),
-    body('bio').optional().isString().maxLength(500),
+    body('bio').optional().isString().isLength({ max: 500 }),
     body('skills').optional().isArray(),
     body('hourlyRate').optional().isNumeric().isInt({ min: 0 }),
     body('location').optional().isString(),

@@ -98,6 +98,13 @@ class BlockchainConfig {
   getSigner() {
     return this.signer;
   }
+
+  getAddress(contractName) {
+    if (this.contracts[contractName]?.target) {
+      return this.contracts[contractName].target;
+    }
+    return this.getContractAddress(contractName);
+  }
 }
 
 module.exports = new BlockchainConfig();

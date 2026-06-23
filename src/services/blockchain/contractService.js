@@ -26,7 +26,7 @@ class ContractService {
   async getReputation(address) {
     try {
       await this.init();
-      const contract = blockchain.getContract('reputationStore');
+      const contract = blockchain.getContract('ReputationStore');
       const score = await contract.getScore(address);
       return Number(score);
     } catch (error) {
@@ -38,7 +38,7 @@ class ContractService {
   async getTier(address) {
     try {
       await this.init();
-      const contract = blockchain.getContract('reputationStore');
+      const contract = blockchain.getContract('ReputationStore');
       const tier = await contract.getTier(address);
       return Number(tier);
     } catch (error) {
@@ -50,7 +50,7 @@ class ContractService {
   async updateReputation(address, isAdd, amount) {
     try {
       await this.init();
-      const contract = blockchain.getContract('reputationStore');
+      const contract = blockchain.getContract('ReputationStore');
       const tx = await contract.updateScore(address, isAdd, amount);
       await tx.wait();
       logger.info(`✅ Reputation updated for ${address}`);
@@ -68,7 +68,7 @@ class ContractService {
   async createJob(client, metadataCID, contractValue, duration) {
     try {
       await this.init();
-      const contract = blockchain.getContract('jobRegistry');
+      const contract = blockchain.getContract('JobRegistry');
       const tx = await contract.createJob(metadataCID, contractValue, duration);
       const receipt = await tx.wait();
       
@@ -92,7 +92,7 @@ class ContractService {
   async getJob(jobId) {
     try {
       await this.init();
-      const contract = blockchain.getContract('jobRegistry');
+      const contract = blockchain.getContract('JobRegistry');
       const job = await contract.getJob(jobId);
       
       return {
@@ -115,7 +115,7 @@ class ContractService {
   async submitProposal(jobId, bidAmount, proposalCID) {
     try {
       await this.init();
-      const contract = blockchain.getContract('jobRegistry');
+      const contract = blockchain.getContract('JobRegistry');
       const signer = blockchain.getSigner();
       const contractWithSigner = contract.connect(signer);
       
@@ -140,18 +140,18 @@ class ContractService {
       const job = await this.getJob(jobId);
       const totalDeposit = Math.floor(job.contractValue * 1.03);
       
-      const usdcContract = blockchain.getContract('usdc');
+      const usdcContract = blockchain.getContract('MockUSDC');
       const signer = blockchain.getSigner();
       const usdcWithSigner = usdcContract.connect(signer);
       
       const approveTx = await usdcWithSigner.approve(
-        blockchain.getAddress('escrowVault'),
+        blockchain.getContractAddress('EscrowVault'),
         totalDeposit
       );
       await approveTx.wait();
       logger.info(`✅ USDC approved: ${totalDeposit}`);
       
-      const escrowContract = blockchain.getContract('escrowVault');
+      const escrowContract = blockchain.getContract('EscrowVault');
       const escrowWithSigner = escrowContract.connect(signer);
       
       const tx = await escrowWithSigner.depositEscrow(jobId, freelancer);
@@ -167,7 +167,7 @@ class ContractService {
   async startWork(jobId) {
     try {
       await this.init();
-      const contract = blockchain.getContract('escrowVault');
+      const contract = blockchain.getContract('EscrowVault');
       const signer = blockchain.getSigner();
       const contractWithSigner = contract.connect(signer);
       
@@ -184,7 +184,7 @@ class ContractService {
   async submitWork(jobId, deliverableCID) {
     try {
       await this.init();
-      const contract = blockchain.getContract('escrowVault');
+      const contract = blockchain.getContract('EscrowVault');
       const signer = blockchain.getSigner();
       const contractWithSigner = contract.connect(signer);
       
@@ -201,7 +201,7 @@ class ContractService {
   async approveAndRelease(jobId) {
     try {
       await this.init();
-      const contract = blockchain.getContract('escrowVault');
+      const contract = blockchain.getContract('EscrowVault');
       const signer = blockchain.getSigner();
       const contractWithSigner = contract.connect(signer);
       
@@ -222,18 +222,18 @@ class ContractService {
       const job = await this.getJob(jobId);
       const disputeFee = Math.min(job.contractValue * 0.02, 50);
       
-      const usdcContract = blockchain.getContract('usdc');
+      const usdcContract = blockchain.getContract('MockUSDC');
       const signer = blockchain.getSigner();
       const usdcWithSigner = usdcContract.connect(signer);
       
       const approveTx = await usdcWithSigner.approve(
-        blockchain.getAddress('escrowVault'),
+        blockchain.getContractAddress('EscrowVault'),
         disputeFee
       );
       await approveTx.wait();
       logger.info(`✅ USDC approved for dispute fee: ${disputeFee}`);
       
-      const escrowContract = blockchain.getContract('escrowVault');
+      const escrowContract = blockchain.getContract('EscrowVault');
       const escrowWithSigner = escrowContract.connect(signer);
       
       const tx = await escrowWithSigner.raiseDispute(jobId);
@@ -253,7 +253,7 @@ class ContractService {
   async setupDisputePanel(jobId, initiator) {
     try {
       await this.init();
-      const contract = blockchain.getContract('arbitratorPanel');
+      const contract = blockchain.getContract('ArbitratorPanel');
       const tx = await contract.setupDisputePanel(jobId, initiator);
       await tx.wait();
       logger.info(`✅ Dispute panel setup for job ${jobId}`);
@@ -267,7 +267,7 @@ class ContractService {
   async startAppealRound(jobId) {
     try {
       await this.init();
-      const contract = blockchain.getContract('arbitratorPanel');
+      const contract = blockchain.getContract('ArbitratorPanel');
       const tx = await contract.startAppealRound(jobId);
       await tx.wait();
       logger.info(`✅ Appeal round started for job ${jobId}`);
@@ -281,7 +281,7 @@ class ContractService {
   async commitVote(jobId, voteHash) {
     try {
       await this.init();
-      const contract = blockchain.getContract('arbitratorPanel');
+      const contract = blockchain.getContract('ArbitratorPanel');
       const signer = blockchain.getSigner();
       const contractWithSigner = contract.connect(signer);
       const tx = await contractWithSigner.commitVote(jobId, voteHash);
@@ -297,7 +297,7 @@ class ContractService {
   async revealVote(jobId, choice, salt) {
     try {
       await this.init();
-      const contract = blockchain.getContract('arbitratorPanel');
+      const contract = blockchain.getContract('ArbitratorPanel');
       const signer = blockchain.getSigner();
       const contractWithSigner = contract.connect(signer);
       const tx = await contractWithSigner.revealVote(jobId, choice, salt);
@@ -313,7 +313,7 @@ class ContractService {
   async submitEvidence(jobId, ipfsHash) {
     try {
       await this.init();
-      const contract = blockchain.getContract('arbitratorPanel');
+      const contract = blockchain.getContract('ArbitratorPanel');
       const signer = blockchain.getSigner();
       const contractWithSigner = contract.connect(signer);
       const tx = await contractWithSigner.submitEvidence(jobId, ipfsHash);
@@ -329,7 +329,7 @@ class ContractService {
   async getChosenArbitrators(jobId) {
     try {
       await this.init();
-      const contract = blockchain.getContract('arbitratorPanel');
+      const contract = blockchain.getContract('ArbitratorPanel');
       const arbitrators = await contract.getChosenArbitrators(jobId);
       return arbitrators.map(a => a.toLowerCase());
     } catch (error) {
@@ -341,7 +341,7 @@ class ContractService {
   async getVote(jobId, arbitrator) {
     try {
       await this.init();
-      const contract = blockchain.getContract('arbitratorPanel');
+      const contract = blockchain.getContract('ArbitratorPanel');
       const vote = await contract.getVote(jobId, arbitrator);
       return Number(vote);
     } catch (error) {
@@ -353,7 +353,7 @@ class ContractService {
   async getPendingResult(jobId) {
     try {
       await this.init();
-      const contract = blockchain.getContract('arbitratorPanel');
+      const contract = blockchain.getContract('ArbitratorPanel');
       const result = await contract.getPendingResult(jobId);
       return Number(result);
     } catch (error) {
@@ -365,7 +365,7 @@ class ContractService {
   async isVotingFinalized(jobId) {
     try {
       await this.init();
-      const contract = blockchain.getContract('arbitratorPanel');
+      const contract = blockchain.getContract('ArbitratorPanel');
       return await contract.isVotingFinalized(jobId);
     } catch (error) {
       logger.error('Check voting finalized error:', error);
@@ -376,7 +376,7 @@ class ContractService {
   async getDisputeRound(jobId) {
     try {
       await this.init();
-      const contract = blockchain.getContract('arbitratorPanel');
+      const contract = blockchain.getContract('ArbitratorPanel');
       const round = await contract.getDisputeRound(jobId);
       return Number(round);
     } catch (error) {
@@ -388,7 +388,7 @@ class ContractService {
   async getResultAt(jobId) {
     try {
       await this.init();
-      const contract = blockchain.getContract('arbitratorPanel');
+      const contract = blockchain.getContract('ArbitratorPanel');
       const resultAt = await contract.getResultAt(jobId);
       return Number(resultAt);
     } catch (error) {
@@ -400,11 +400,36 @@ class ContractService {
   async finalizeDispute(jobId) {
     try {
       await this.init();
-      const contract = blockchain.getContract('arbitratorPanel');
+      const contract = blockchain.getContract('ArbitratorPanel');
       const result = await contract.finalizeDispute(jobId);
       return Number(result);
     } catch (error) {
       logger.error('Finalize dispute error:', error);
+      throw error;
+    }
+  }
+
+  async getArbitratorStake(address) {
+    await this.init();
+    const treasury = blockchain.getContract('PlatformTreasury');
+    return treasury.arbitratorStakes(address);
+  }
+
+  async claimTimeoutRelease(jobId) {
+    try {
+      await this.init();
+      const contract = blockchain.getContract('EscrowVault');
+      const signer = blockchain.getSigner();
+      if (!signer) {
+        throw new Error('INDEXER_PRIVATE_KEY required for claimTimeoutRelease');
+      }
+      const contractWithSigner = contract.connect(signer);
+      const tx = await contractWithSigner.claimTimeoutRelease(jobId);
+      await tx.wait();
+      logger.info(`claimTimeoutRelease confirmed for job ${jobId}`);
+      return tx;
+    } catch (error) {
+      logger.error('claimTimeoutRelease error:', error);
       throw error;
     }
   }

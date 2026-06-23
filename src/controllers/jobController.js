@@ -284,7 +284,7 @@ const jobController = {
       // 4. Save to database
       const deadline = Math.floor(Date.now() / 1000) + duration;
       const job = new Job({
-        onchainId: jobId,
+        onchainJobId: jobId,
         clientAddress,
         metadataCID: metadataResult.cid,
         title,
@@ -310,7 +310,7 @@ const jobController = {
         success: true,
         message: 'Job created successfully',
         jobId: jobId,
-        onchainId: jobId,
+        onchainJobId: jobId,
         metadataCID: metadataResult.cid,
         job
       });

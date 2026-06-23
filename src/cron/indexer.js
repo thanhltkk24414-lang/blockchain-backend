@@ -1,15 +1,3 @@
-// 📄 DÁN CODE NÀY VÀO FILE src/cron/indexer.js
-const logger = require('../utils/logger');
+const eventIndexer = require('../services/blockchain/eventIndexer');
 
-class EventIndexer {
-  constructor() {
-    this.isRunning = false;
-  }
-
-  async start() {
-    logger.info('📡 Event indexer started (placeholder)');
-    return this;
-  }
-}
-
-module.exports = new EventIndexer();
+module.exports = eventIndexer;
