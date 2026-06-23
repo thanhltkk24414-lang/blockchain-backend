@@ -1,111 +1,94 @@
-// 📄 TOÀN BỘ FILE src/config/blockchain.js (THAY MỚI HOÀN TOÀN)
 const { ethers } = require('ethers');
-const fs = require('fs');
 const path = require('path');
+const fs = require('fs');
 const logger = require('../utils/logger');
 
-/**
- * 📝 Blockchain Configuration
- * Kết nối với Ethereum và Smart Contracts đã deploy
- */
+const CONTRACT_NAMES = [
+  'MockUSDC',
+  'ReputationStore',
+  'PlatformTreasury',
+  'JobRegistry',
+  'ArbitratorPanel',
+  'EscrowVault',
+];
+
+const ENV_ADDRESS_KEYS = {
+  MockUSDC: 'MOCK_USDC_ADDRESS',
+  ReputationStore: 'REPUTATION_STORE_ADDRESS',
+  PlatformTreasury: 'PLATFORM_TREASURY_ADDRESS',
+  JobRegistry: 'JOB_REGISTRY_ADDRESS',
+  ArbitratorPanel: 'ARBITRATOR_PANEL_ADDRESS',
+  EscrowVault: 'ESCROW_VAULT_ADDRESS',
+};
+
 class BlockchainConfig {
   constructor() {
     this.provider = null;
     this.signer = null;
     this.contracts = {};
-    this.addresses = {};
+  }
+
+  loadAbi(contractName) {
+    const abiPath = path.join(__dirname, '..', 'abi', `${contractName}.json`);
+    if (!fs.existsSync(abiPath)) {
+      throw new Error(
+        `ABI not found for ${contractName}. Run \`npm run export-abis\` from the monorepo root.`
+      );
+    }
+
+    const abi = JSON.parse(fs.readFileSync(abiPath, 'utf8'));
+    if (!Array.isArray(abi) || abi.length === 0) {
+      throw new Error(`ABI file is empty for ${contractName}: ${abiPath}`);
+    }
+
+    return abi;
+  }
+
+  getContractAddress(contractName) {
+    const envKey = ENV_ADDRESS_KEYS[contractName];
+    const address = process.env[envKey];
+    if (!address) {
+      throw new Error(`${envKey} is not set in backend/.env`);
+    }
+    return address;
   }
 
   async initialize() {
     try {
-      // 1. Đọc địa chỉ từ .env
-      this.addresses = {
-        usdc: process.env.USDC_ADDRESS,
-        reputationStore: process.env.REPUTATION_STORE_ADDRESS,
-        platformTreasury: process.env.PLATFORM_TREASURY_ADDRESS,
-        jobRegistry: process.env.JOB_REGISTRY_ADDRESS,
-        arbitratorPanel: process.env.ARBITRATOR_PANEL_ADDRESS,
-        escrowVault: process.env.ESCROW_VAULT_ADDRESS,
-      };
-
-      // Kiểm tra địa chỉ
-      for (const [name, address] of Object.entries(this.addresses)) {
-        if (!address || address === '0x...') {
-          throw new Error(`Missing address for ${name}`);
-        }
-        logger.info(`✅ ${name}: ${address}`);
+      const rpcUrl = process.env.RPC_URL || process.env.SEPOLIA_RPC_URL;
+      if (!rpcUrl) {
+        throw new Error('RPC_URL or SEPOLIA_RPC_URL is not defined in backend/.env');
       }
 
-      // 2. Khởi tạo provider
-      this.provider = new ethers.JsonRpcProvider(process.env.RPC_URL);
-      logger.info('✅ Provider initialized');
+      this.provider = new ethers.JsonRpcProvider(rpcUrl);
+      logger.info('Blockchain provider initialized');
 
-      // 3. Khởi tạo signer (cho indexer)
       if (process.env.INDEXER_PRIVATE_KEY) {
         this.signer = new ethers.Wallet(process.env.INDEXER_PRIVATE_KEY, this.provider);
-        logger.info('✅ Signer initialized');
+        logger.info('Blockchain signer initialized');
       }
 
-      // 4. Đọc ABIs từ file (đã copy từ contracts)
-      const abiPath = path.join(__dirname, '../abi');
-      
-      // Danh sách contract cần init
-      const contractConfigs = [
-        { name: 'usdc', key: 'usdc', file: 'MockUSDC.json' },
-        { name: 'reputationStore', key: 'reputationStore', file: 'ReputationStore.json' },
-        { name: 'platformTreasury', key: 'platformTreasury', file: 'PlatformTreasury.json' },
-        { name: 'jobRegistry', key: 'jobRegistry', file: 'JobRegistry.json' },
-        { name: 'arbitratorPanel', key: 'arbitratorPanel', file: 'ArbitratorPanel.json' },
-        { name: 'escrowVault', key: 'escrowVault', file: 'EscrowVault.json' },
-      ];
-
-      for (const config of contractConfigs) {
-        const abiFile = path.join(abiPath, config.file);
-        
-        if (!fs.existsSync(abiFile)) {
-          logger.warn(`⚠️ ABI file not found: ${abiFile}`);
-          continue;
-        }
-
-        // Đọc ABI
-        const artifact = JSON.parse(fs.readFileSync(abiFile, 'utf8'));
-        const abi = artifact.abi || artifact;
-        
-        const address = this.addresses[config.key];
-        if (!address) {
-          logger.warn(`⚠️ Address not found for ${config.name}`);
-          continue;
-        }
-
-        // Tạo contract instance
-        this.contracts[config.name] = new ethers.Contract(
-          address,
-          abi,
-          this.provider
-        );
-
-        // Connect signer nếu có
-        if (this.signer) {
-          this.contracts[config.name] = this.contracts[config.name].connect(this.signer);
-        }
-
-        logger.info(`✅ Contract ${config.name} initialized at ${address}`);
+      for (const name of CONTRACT_NAMES) {
+        const address = this.getContractAddress(name);
+        const abi = this.loadAbi(name);
+        const runner = this.signer || this.provider;
+        this.contracts[name] = new ethers.Contract(address, abi, runner);
+        logger.info(`Loaded contract ${name} at ${address}`);
       }
 
-      logger.info('✅ Blockchain configuration complete');
       return this.contracts;
-
     } catch (error) {
-      logger.error('❌ Blockchain initialization failed:', error);
+      logger.error('Blockchain initialization failed:', error);
       throw error;
     }
   }
 
   getContract(name) {
-    if (!this.contracts[name]) {
-      throw new Error(`Contract ${name} not found`);
+    const contract = this.contracts[name];
+    if (!contract) {
+      throw new Error(`Contract not loaded: ${name}. Call initialize() first.`);
     }
-    return this.contracts[name];
+    return contract;
   }
 
   getProvider() {
@@ -114,10 +97,6 @@ class BlockchainConfig {
 
   getSigner() {
     return this.signer;
-  }
-
-  getAddress(name) {
-    return this.addresses[name];
   }
 }
 

@@ -1,219 +1,168 @@
-// 📄 DÁN TOÀN BỘ CODE NÀY VÀO src/config/ipfs.js
 const axios = require('axios');
 const FormData = require('form-data');
 const logger = require('../utils/logger');
 
+const PINATA_API_URL = 'https://api.pinata.cloud';
+const DEFAULT_GATEWAY_URL = 'https://gateway.pinata.cloud';
+
 /**
- * 📝 GHI CHÚ: IPFS Service
- * Dùng để upload và download dữ liệu từ IPFS
- * 
- * Các chức năng:
- * - uploadFile: Upload file lên IPFS
- * - uploadJSON: Upload JSON lên IPFS
- * - getFile: Lấy file từ IPFS theo CID
- * - getJSON: Lấy JSON từ IPFS theo CID
- * - getGatewayUrl: Lấy URL gateway từ CID
+ * IPFS Service — Pinata pinning API for uploads, gateway for reads.
+ *
+ * - uploadFile: POST /pinning/pinFileToIPFS
+ * - uploadJSON: POST /pinning/pinJSONToIPFS
+ * - getFile / getJSON: fetch via IPFS_GATEWAY_URL
  */
 class IPFSService {
   constructor() {
-    // Lấy cấu hình từ biến môi trường
-    this.gatewayUrl = process.env.IPFS_GATEWAY_URL || 'https://ipfs.infura.io:5001';
-    this.apiKey = process.env.IPFS_API_KEY || '';
-    this.apiSecret = process.env.IPFS_API_SECRET || '';
-    
-    // Tạo auth header nếu có API key
-    this.authHeader = this.apiKey && this.apiSecret 
-      ? `Basic ${Buffer.from(`${this.apiKey}:${this.apiSecret}`).toString('base64')}`
-      : '';
-    
-    logger.info(`📡 IPFS Service initialized with gateway: ${this.gatewayUrl}`);
+    this.gatewayUrl = (process.env.IPFS_GATEWAY_URL || DEFAULT_GATEWAY_URL).replace(/\/$/, '');
+    this.jwt = process.env.PINATA_JWT || '';
+    this.apiKey = process.env.PINATA_API_KEY || process.env.IPFS_API_KEY || '';
+    this.apiSecret =
+      process.env.PINATA_SECRET_API_KEY || process.env.IPFS_API_SECRET || '';
+
+    const authMode = this.jwt ? 'JWT' : this.apiKey && this.apiSecret ? 'API key' : 'none';
+    logger.info(`IPFS Service initialized (Pinata, auth: ${authMode}, gateway: ${this.gatewayUrl})`);
   }
 
-  /**
-   * Upload file lên IPFS
-   * @param {Buffer} fileBuffer - Buffer của file cần upload
-   * @param {string} filename - Tên file
-   * @returns {Promise<{cid: string, url: string, gatewayUrl: string}>}
-   * 
-   * 📝 Ví dụ sử dụng:
-   * const fileBuffer = fs.readFileSync('image.png');
-   * const result = await ipfsService.uploadFile(fileBuffer, 'image.png');
-   * console.log(result.cid); // QmX...
-   */
+  _getPinataAuthHeaders() {
+    if (this.jwt) {
+      return { Authorization: `Bearer ${this.jwt}` };
+    }
+    if (this.apiKey && this.apiSecret) {
+      return {
+        pinata_api_key: this.apiKey,
+        pinata_secret_api_key: this.apiSecret,
+      };
+    }
+    return null;
+  }
+
+  _ensureAuth() {
+    const headers = this._getPinataAuthHeaders();
+    if (!headers) {
+      throw new Error(
+        'Pinata credentials missing: set PINATA_JWT or PINATA_API_KEY + PINATA_SECRET_API_KEY (or IPFS_API_KEY + IPFS_API_SECRET)'
+      );
+    }
+    return headers;
+  }
+
+  _formatError(error) {
+    const data = error.response?.data;
+    if (typeof data?.error === 'string') return data.error;
+    if (data?.details) return data.details;
+    if (data?.reason) return data.reason;
+    return error.message;
+  }
+
+  _buildUploadResult(cid) {
+    return {
+      cid,
+      url: `ipfs://${cid}`,
+      gatewayUrl: this.getGatewayUrl(cid),
+    };
+  }
+
   async uploadFile(fileBuffer, filename) {
     try {
-      logger.info(`📤 Uploading file: ${filename} (${fileBuffer.length} bytes)`);
-      
-      // Tạo form data
+      logger.info(`Uploading file to Pinata: ${filename} (${fileBuffer.length} bytes)`);
+
       const formData = new FormData();
       formData.append('file', fileBuffer, {
-        filename: filename,
+        filename,
         contentType: 'application/octet-stream',
       });
 
-      // Gửi request lên IPFS
-      const headers = {
-        ...formData.getHeaders(),
-      };
-      
-      if (this.authHeader) {
-        headers.Authorization = this.authHeader;
-      }
-
       const response = await axios.post(
-        `${this.gatewayUrl}/api/v0/add`,
+        `${PINATA_API_URL}/pinning/pinFileToIPFS`,
         formData,
         {
-          headers,
+          headers: {
+            ...formData.getHeaders(),
+            ...this._ensureAuth(),
+          },
           maxContentLength: Infinity,
           maxBodyLength: Infinity,
         }
       );
 
-      const cid = response.data.Hash;
-      const gatewayUrl = `https://ipfs.io/ipfs/${cid}`;
-      
-      logger.info(`✅ File uploaded to IPFS: ${cid}`);
-      
-      return {
-        cid,
-        url: `ipfs://${cid}`,
-        gatewayUrl,
-      };
+      const cid = response.data.IpfsHash;
+      logger.info(`File pinned to IPFS: ${cid}`);
+      return this._buildUploadResult(cid);
     } catch (error) {
-      logger.error('❌ IPFS upload failed:', error.message);
-      throw new Error(`IPFS upload failed: ${error.message}`);
+      const message = this._formatError(error);
+      logger.error(`Pinata file upload failed: ${message}`);
+      throw new Error(`IPFS upload failed: ${message}`);
     }
   }
 
-  /**
-   * Upload JSON lên IPFS
-   * @param {Object} data - Dữ liệu JSON cần upload
-   * @returns {Promise<{cid: string, url: string, gatewayUrl: string}>}
-   * 
-   * 📝 Ví dụ sử dụng:
-   * const metadata = { title: 'Job 1', description: '...' };
-   * const result = await ipfsService.uploadJSON(metadata);
-   * console.log(result.cid); // QmY...
-   */
-  async uploadJSON(data) {
+  async uploadJSON(data, options = {}) {
     try {
-      logger.info(`📤 Uploading JSON to IPFS`);
-      
-      const headers = {
-        'Content-Type': 'application/json',
+      logger.info('Uploading JSON to Pinata');
+
+      const body = {
+        pinataContent: data,
       };
-      
-      if (this.authHeader) {
-        headers.Authorization = this.authHeader;
+      if (options.name) {
+        body.pinataMetadata = { name: options.name };
       }
 
       const response = await axios.post(
-        `${this.gatewayUrl}/api/v0/add`,
-        JSON.stringify(data),
-        { headers }
-      );
-
-      const cid = response.data.Hash;
-      const gatewayUrl = `https://ipfs.io/ipfs/${cid}`;
-      
-      logger.info(`✅ JSON uploaded to IPFS: ${cid}`);
-      
-      return {
-        cid,
-        url: `ipfs://${cid}`,
-        gatewayUrl,
-      };
-    } catch (error) {
-      logger.error('❌ IPFS JSON upload failed:', error.message);
-      throw new Error(`IPFS upload failed: ${error.message}`);
-    }
-  }
-
-  /**
-   * Lấy file từ IPFS theo CID
-   * @param {string} cid - IPFS CID của file
-   * @returns {Promise<Buffer>}
-   * 
-   * 📝 Ví dụ sử dụng:
-   * const fileBuffer = await ipfsService.getFile('QmX...');
-   * // Lưu file buffer hoặc xử lý tiếp
-   */
-  async getFile(cid) {
-    try {
-      logger.info(`📥 Downloading file from IPFS: ${cid}`);
-      
-      const headers = {};
-      if (this.authHeader) {
-        headers.Authorization = this.authHeader;
-      }
-
-      const response = await axios.get(
-        `${this.gatewayUrl}/api/v0/cat?arg=${cid}`,
+        `${PINATA_API_URL}/pinning/pinJSONToIPFS`,
+        body,
         {
-          headers,
-          responseType: 'arraybuffer',
+          headers: {
+            'Content-Type': 'application/json',
+            ...this._ensureAuth(),
+          },
         }
       );
 
-      logger.info(`✅ File downloaded: ${response.data.length} bytes`);
+      const cid = response.data.IpfsHash;
+      logger.info(`JSON pinned to IPFS: ${cid}`);
+      return this._buildUploadResult(cid);
+    } catch (error) {
+      const message = this._formatError(error);
+      logger.error(`Pinata JSON upload failed: ${message}`);
+      throw new Error(`IPFS upload failed: ${message}`);
+    }
+  }
+
+  async getFile(cid) {
+    try {
+      logger.info(`Downloading file from IPFS gateway: ${cid}`);
+
+      const response = await axios.get(`${this.gatewayUrl}/ipfs/${cid}`, {
+        responseType: 'arraybuffer',
+      });
+
+      logger.info(`File downloaded: ${response.data.length} bytes`);
       return response.data;
     } catch (error) {
-      logger.error(`❌ IPFS file retrieval failed for CID ${cid}:`, error.message);
+      logger.error(`IPFS file retrieval failed for CID ${cid}:`, error.message);
       throw new Error(`IPFS file retrieval failed: ${error.message}`);
     }
   }
 
-  /**
-   * Lấy JSON từ IPFS theo CID
-   * @param {string} cid - IPFS CID của JSON
-   * @returns {Promise<Object>}
-   * 
-   * 📝 Ví dụ sử dụng:
-   * const metadata = await ipfsService.getJSON('QmY...');
-   * console.log(metadata.title);
-   */
   async getJSON(cid) {
     try {
-      logger.info(`📥 Downloading JSON from IPFS: ${cid}`);
-      
-      const headers = {};
-      if (this.authHeader) {
-        headers.Authorization = this.authHeader;
-      }
+      logger.info(`Downloading JSON from IPFS gateway: ${cid}`);
 
-      const response = await axios.get(
-        `${this.gatewayUrl}/api/v0/cat?arg=${cid}`,
-        { headers }
-      );
+      const response = await axios.get(`${this.gatewayUrl}/ipfs/${cid}`);
+      const data = typeof response.data === 'string' ? JSON.parse(response.data) : response.data;
 
-      const data = JSON.parse(response.data);
-      logger.info(`✅ JSON downloaded from IPFS`);
+      logger.info('JSON downloaded from IPFS');
       return data;
     } catch (error) {
-      logger.error(`❌ IPFS JSON retrieval failed for CID ${cid}:`, error.message);
+      logger.error(`IPFS JSON retrieval failed for CID ${cid}:`, error.message);
       throw new Error(`IPFS JSON retrieval failed: ${error.message}`);
     }
   }
 
-  /**
-   * Lấy URL gateway từ CID
-   * @param {string} cid - IPFS CID
-   * @returns {string} URL có thể truy cập qua browser
-   * 
-   * 📝 Ví dụ sử dụng:
-   * const url = ipfsService.getGatewayUrl('QmX...');
-   * // https://ipfs.io/ipfs/QmX...
-   */
   getGatewayUrl(cid) {
-    return `https://ipfs.io/ipfs/${cid}`;
+    return `${this.gatewayUrl}/ipfs/${cid}`;
   }
 
-  /**
-   * Kiểm tra file có tồn tại trên IPFS không
-   * @param {string} cid - IPFS CID cần kiểm tra
-   * @returns {Promise<boolean>}
-   */
   async fileExists(cid) {
     try {
       await this.getFile(cid);
@@ -224,5 +173,4 @@ class IPFSService {
   }
 }
 
-// Export singleton instance
 module.exports = new IPFSService();

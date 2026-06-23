@@ -1,0 +1,12 @@
+﻿node_modules/
+.env
+.env.local
+.env.*.local
+*.pem
+dist/
+build/
+.cache/
+coverage/
+*.log
+.DS_Store
+Thumbs.db
