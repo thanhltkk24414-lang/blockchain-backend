@@ -6,7 +6,7 @@
   "scripts": {
     "start": "node src/server.js",
     "dev": "nodemon src/server.js",
-    "docker:mongo": "docker run -d -p 27017:27017 --name mongo mongo:7",
+    "docker:mongo": "node scripts/docker-mongo.js",
     "test": "node scripts/test-ipfs-pinata.js",
     "test:auth": "node scripts/test-auth-load.js",
     "test:api": "node scripts/test-api-smoke.js"
