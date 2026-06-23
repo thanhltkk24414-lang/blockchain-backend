@@ -4,9 +4,7 @@
   "description": "��#\u0000 \u0000S\u0000h\u0000a\u0000r\u0000e\u0000V\u0000o\u0000l\u0000t\u0000 \u0000B\u0000a\u0000c\u0000k\u0000e\u0000n\u0000d\u0000\r\u0000 \u0000",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
-    "export-abis": "node scripts/export-abis.js",
-    "build-abis": "cd /workspaces/blockchain-contracts && npx hardhat compile && cd /workspaces/blockchain-backend && npm run export-abis"
+    "test": "node scripts/test-ipfs-pinata.js"
   },
   "repository": {
     "type": "git",
@@ -29,10 +27,11 @@
     "nodemon": "^3.1.14"
   },
   "dependencies": {
+    "axios": "^1.18.0",
     "cors": "^2.8.6",
     "dotenv": "^17.4.2",
     "express": "^5.2.1",
-    "express-validator": "^7.3.2",
+    "form-data": "^4.0.6",
     "helmet": "^8.2.0",
     "mongoose": "^9.7.1",
     "morgan": "^1.11.0",
