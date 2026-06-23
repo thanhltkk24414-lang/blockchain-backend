@@ -1,5 +1,6 @@
 // 📄 TOÀN BỘ FILE src/app.js (THAY MỚI HOÀN TOÀN)
 require('dotenv').config({ path: require('path').join(__dirname, '..', '.env') });
+const path = require('path');
 const express = require('express');
 const cors = require('cors');
 const helmet = require('helmet');
@@ -22,8 +23,17 @@ const app = express();
 // 📌 MIDDLEWARE
 // =============================================
 
-// Bảo mật
-app.use(helmet());
+// Bảo mật (allow esm.sh for /siwe-sign.html SIWE helper)
+app.use(helmet({
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'self'"],
+      scriptSrc: ["'self'", 'https://esm.sh'],
+      connectSrc: ["'self'"],
+      styleSrc: ["'self'", "'unsafe-inline'"],
+    },
+  },
+}));
 
 // CORS - Cho phép frontend truy cập
 app.use(cors({
@@ -41,6 +51,12 @@ app.use(morgan('dev'));
 // =============================================
 // 📌 ROUTES
 // =============================================
+
+// SIWE signing helper (MetaMask needs http://, not file://)
+app.use(express.static(path.join(__dirname, '..', 'public')));
+app.get('/siwe-sign', (req, res) => {
+  res.sendFile(path.join(__dirname, '..', 'public', 'siwe-sign.html'));
+});
 
 // Health check (works without MongoDB — use for smoke tests)
 app.get('/health', (req, res) => {

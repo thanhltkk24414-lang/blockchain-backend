@@ -62,18 +62,18 @@ function Show-SiweInstructions {
     Write-Host ""
     Write-Host "SIWE signing is required — MetaMask cannot run inside PowerShell." -ForegroundColor Yellow
     Write-Host ""
-    Write-Host "1. Open Chrome with MetaMask on Sepolia network"
-    Write-Host "2. DevTools (F12) → Console → run the script from:"
+    Write-Host "1. Open http://127.0.0.1:5000/siwe-sign.html (backend must be running)"
+    Write-Host "   Or DevTools console on an https page — see:"
     Write-Host "   docs/guides/postman-walkthrough-vi.md (Phan C, Buoc 5)"
     Write-Host ""
-    Write-Host "   Values to use:"
+    Write-Host "2. Values to use:"
     Write-Host "     walletAddress = $WalletAddress"
     Write-Host "     nonce         = $Nonce"
     Write-Host "     domain        = $Domain"
     Write-Host "     chainId       = $ChainId"
     Write-Host "     uri           = (match APP_URL in backend/.env, e.g. http://localhost:3000)"
     Write-Host ""
-    Write-Host "3. Copy the full SIWE message and hex signature from console output"
+    Write-Host "3. Copy the full SIWE message and hex signature from the page or console"
     Write-Host ""
 }
 
