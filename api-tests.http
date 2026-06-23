@@ -1,0 +1,71 @@
+# ShareVolt API — REST Client (humao.rest-client)
+# Install: VS Code/Cursor → Extensions → search "REST Client" (humao.rest-client)
+# Usage: open this file → click "Send Request" above each ### block
+# Windows: use 127.0.0.1 instead of localhost (avoids IPv6 hangs)
+
+@baseUrl = http://127.0.0.1:5000
+@walletAddress = 0xYourWalletAddressHere
+@authToken =
+
+# SIWE placeholders — fill after signing with MetaMask (see docs/guides/postman-walkthrough-vi.md)
+@siweMessage = PASTE_FULL_SIWE_MESSAGE_HERE
+@siweSignature = 0xPASTE_SIGNATURE_HERE
+
+### 01 — GET /health (no auth)
+GET {{baseUrl}}/health
+
+### 02 — POST /api/auth/nonce (needs MongoDB)
+POST {{baseUrl}}/api/auth/nonce
+Content-Type: application/json
+
+{
+  "walletAddress": "{{walletAddress}}"
+}
+
+### 03 — POST /api/auth/verify (needs SIWE message + signature from MetaMask)
+POST {{baseUrl}}/api/auth/verify
+Content-Type: application/json
+
+{
+  "message": "{{siweMessage}}",
+  "signature": "{{siweSignature}}"
+}
+
+### 04 — GET /api/auth/me (needs JWT from verify → copy token to @authToken)
+GET {{baseUrl}}/api/auth/me
+Authorization: Bearer {{authToken}}
+
+### 05 — POST /api/ipfs/upload/metadata (needs auth + Pinata in backend .env)
+POST {{baseUrl}}/api/ipfs/upload/metadata
+Authorization: Bearer {{authToken}}
+Content-Type: application/json
+
+{
+  "title": "Smart Contract Audit",
+  "description": "Audit Solidity escrow contracts on Sepolia testnet.",
+  "category": "development",
+  "skills": ["Solidity", "Security"],
+  "deliverables": "PDF audit report with findings and remediation plan.",
+  "acceptanceCriteria": "All critical and high issues documented with reproducible PoCs.",
+  "clientAddress": "{{walletAddress}}",
+  "createdAt": "2026-06-23T00:00:00.000Z"
+}
+
+### 06 — POST /api/jobs (needs auth + MongoDB + Pinata + RPC)
+POST {{baseUrl}}/api/jobs
+Authorization: Bearer {{authToken}}
+Content-Type: application/json
+
+{
+  "title": "Smart Contract Audit",
+  "description": "Audit Solidity escrow contracts on Sepolia testnet for security vulnerabilities.",
+  "category": "development",
+  "contractValue": 100,
+  "duration": 604800,
+  "skills": ["Solidity", "Security"],
+  "deliverables": "PDF audit report with findings and remediation plan.",
+  "acceptanceCriteria": "All critical and high issues documented with reproducible PoCs."
+}
+
+### 07 — GET /api/jobs (public list)
+GET {{baseUrl}}/api/jobs?page=1&limit=20
