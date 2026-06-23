@@ -54,8 +54,9 @@ app.use(morgan('dev'));
 
 // SIWE signing helper (MetaMask needs http://, not file://)
 app.use(express.static(path.join(__dirname, '..', 'public')));
-app.get('/siwe-sign', (req, res) => {
-  res.sendFile(path.join(__dirname, '..', 'public', 'siwe-sign.html'));
+const siweSignPage = path.join(__dirname, '..', 'public', 'siwe-sign.html');
+app.get(['/siwe-sign', '/siwe-sign.html'], (req, res) => {
+  res.sendFile(siweSignPage);
 });
 
 // Health check (works without MongoDB — use for smoke tests)
