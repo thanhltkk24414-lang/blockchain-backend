@@ -14,7 +14,7 @@
     .row { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-top: 1rem; }
     button { padding: 0.5rem 1rem; font: inherit; cursor: pointer; }
     button:disabled { opacity: 0.5; cursor: not-allowed; }
-    #status { margin-top: 1rem; padding: 0.75rem; border-radius: 6px; font-size: 0.9rem; }
+    #status { margin-top: 1rem; padding: 0.75rem; border-radius: 6px; font-size: 0.9rem; white-space: pre-wrap; word-break: break-word; }
     #status.error { background: #fde8e8; color: #9b1c1c; border: 1px solid #f5c6c6; }
     #status.ok { background: #e8f5e9; color: #1b5e20; border: 1px solid #c8e6c9; }
     #status.info { background: #e3f2fd; color: #0d47a1; border: 1px solid #bbdefb; }
@@ -25,9 +25,10 @@
 <body>
   <h1>Ký SIWE cho Fapex (MetaMask)</h1>
   <p>
-  Trang này phải mở qua <strong>http://127.0.0.1:5000</strong> (backend đang chạy).
-  MetaMask <strong>không</strong> hoạt động với <code>file://</code>.
+    Trang này phải mở qua <strong>http://127.0.0.1:5000</strong> (backend đang chạy).
+    MetaMask <strong>không</strong> hoạt động với <code>file://</code>.
   </p>
+  <p class="hint"><strong>Thứ tự:</strong> 1) Kết nối MetaMask → 2) Lấy nonce → 3) Ký với MetaMask</p>
 
   <div id="status" class="info" role="status">Đang kiểm tra MetaMask…</div>
 
@@ -68,163 +69,290 @@
     <textarea id="outSignature" readonly placeholder="0x…"></textarea>
   </label>
 
-  <script type="module">
-    import { SiweMessage } from 'https://esm.sh/siwe@3';
+  <script>
+    (function () {
+      'use strict';
 
-    const STATEMENT = 'Sign in to Fapex';
-    const API_BASE = window.location.origin;
+      const STATEMENT = 'Sign in to Fapex';
+      const API_BASE = window.location.origin;
+      const SEPOLIA_CHAIN_ID = 11155111;
+      const SEPOLIA_HEX = '0xaa36a7';
 
-    const els = {
-      status: document.getElementById('status'),
-      walletAddress: document.getElementById('walletAddress'),
-      nonce: document.getElementById('nonce'),
-      domain: document.getElementById('domain'),
-      uri: document.getElementById('uri'),
-      chainId: document.getElementById('chainId'),
-      outMessage: document.getElementById('outMessage'),
-      outSignature: document.getElementById('outSignature'),
-      btnConnect: document.getElementById('btnConnect'),
-      btnNonce: document.getElementById('btnNonce'),
-      btnSign: document.getElementById('btnSign'),
-    };
+      const els = {
+        status: document.getElementById('status'),
+        walletAddress: document.getElementById('walletAddress'),
+        nonce: document.getElementById('nonce'),
+        domain: document.getElementById('domain'),
+        uri: document.getElementById('uri'),
+        chainId: document.getElementById('chainId'),
+        outMessage: document.getElementById('outMessage'),
+        outSignature: document.getElementById('outSignature'),
+        btnConnect: document.getElementById('btnConnect'),
+        btnNonce: document.getElementById('btnNonce'),
+        btnSign: document.getElementById('btnSign'),
+      };
 
-    function setStatus(kind, text) {
-      els.status.className = kind;
-      els.status.textContent = text;
-    }
+      let connectedAccount = null;
 
-    function getEthereum() {
-      return window.ethereum;
-    }
-
-    function applyQueryParams() {
-      const params = new URLSearchParams(window.location.search);
-      for (const key of ['walletAddress', 'nonce', 'domain', 'uri', 'chainId']) {
-        const value = params.get(key);
-        if (value) els[key].value = value;
+      function setStatus(kind, text) {
+        els.status.className = kind;
+        els.status.textContent = text;
       }
-    }
 
-    function checkEthereum() {
-      if (!getEthereum()) {
-        setStatus(
-          'error',
-          'window.ethereum không có — MetaMask không inject trên file://. Mở http://127.0.0.1:5000/siwe-sign.html sau khi chạy npm start trong backend.'
+      function showError(err, context) {
+        const msg = err && err.message ? err.message : String(err);
+        console.error(context || 'SIWE sign error:', err);
+        setStatus('error', (context ? context + ': ' : '') + msg);
+        if (typeof err === 'object' && err !== null && err.code !== undefined) {
+          alert('Lỗi: ' + msg + (err.code ? ' (code ' + err.code + ')' : ''));
+        } else {
+          alert('Lỗi: ' + msg);
+        }
+      }
+
+      /** EIP-4361 message — same layout as siwe@3 SiweMessage.prepareMessage() */
+      function prepareSiweMessage(fields) {
+        const {
+          domain,
+          address,
+          statement,
+          uri,
+          version,
+          chainId,
+          nonce,
+          issuedAt = new Date().toISOString(),
+        } = fields;
+
+        const header = domain + ' wants you to sign in with your Ethereum account:';
+        const prefix = statement
+          ? header + '\n' + address + '\n\n' + statement + '\n'
+          : header + '\n' + address + '\n';
+
+        return (
+          prefix +
+          '\nURI: ' + uri +
+          '\nVersion: ' + version +
+          '\nChain ID: ' + chainId +
+          '\nNonce: ' + nonce +
+          '\nIssued At: ' + issuedAt
         );
+      }
+
+      function getEthereum() {
+        const eth = window.ethereum;
+        if (!eth) return null;
+        if (Array.isArray(eth.providers) && eth.providers.length) {
+          return eth.providers.find(function (p) { return p.isMetaMask; }) || eth.providers[0];
+        }
+        return eth;
+      }
+
+      function applyQueryParams() {
+        const params = new URLSearchParams(window.location.search);
+        ['walletAddress', 'nonce', 'domain', 'uri', 'chainId'].forEach(function (key) {
+          const value = params.get(key);
+          if (value) els[key].value = value;
+        });
+      }
+
+      function checkEthereum() {
+        const ethereum = getEthereum();
+        if (!ethereum) {
+          setStatus(
+            'error',
+            'window.ethereum không có — MetaMask chưa cài hoặc trang mở sai (file://).\n' +
+            'Cài MetaMask, mở http://127.0.0.1:5000/siwe-sign.html sau khi chạy npm start.'
+          );
+          els.btnConnect.disabled = true;
+          els.btnSign.disabled = true;
+          return false;
+        }
+        setStatus('ok', 'MetaMask phát hiện được. Bấm "Kết nối MetaMask" trước, rồi lấy nonce và ký.');
+        return true;
+      }
+
+      async function ensureSepolia(ethereum, targetChainId) {
+        const chainId = Number(targetChainId);
+        if (!Number.isInteger(chainId) || chainId <= 0) {
+          throw new Error('Chain ID không hợp lệ.');
+        }
+        const hexChain = '0x' + chainId.toString(16);
+        const currentHex = await ethereum.request({ method: 'eth_chainId' });
+        if (currentHex.toLowerCase() === hexChain.toLowerCase()) return;
+
+        setStatus('info', 'Đang chuyển sang chain ' + chainId + '…');
+        try {
+          await ethereum.request({
+            method: 'wallet_switchEthereumChain',
+            params: [{ chainId: hexChain }],
+          });
+        } catch (switchErr) {
+          if (switchErr.code === 4902 && chainId === SEPOLIA_CHAIN_ID) {
+            await ethereum.request({
+              method: 'wallet_addEthereumChain',
+              params: [{
+                chainId: SEPOLIA_HEX,
+                chainName: 'Sepolia',
+                nativeCurrency: { name: 'Sepolia ETH', symbol: 'ETH', decimals: 18 },
+                rpcUrls: ['https://rpc.sepolia.org'],
+                blockExplorerUrls: ['https://sepolia.etherscan.io'],
+              }],
+            });
+            return;
+          }
+          throw switchErr;
+        }
+      }
+
+      async function connectWallet() {
+        const ethereum = getEthereum();
+        if (!ethereum) {
+          showError(new Error('MetaMask không khả dụng.'), 'Kết nối');
+          return;
+        }
         els.btnConnect.disabled = true;
+        setStatus('info', 'Chờ MetaMask — chọn tài khoản…');
+        try {
+          const accounts = await ethereum.request({ method: 'eth_requestAccounts' });
+          if (!accounts || !accounts[0]) {
+            throw new Error('Không có tài khoản nào được chọn.');
+          }
+          connectedAccount = accounts[0];
+          els.walletAddress.value = connectedAccount;
+
+          const targetChain = Number(els.chainId.value) || SEPOLIA_CHAIN_ID;
+          await ensureSepolia(ethereum, targetChain);
+
+          setStatus('ok', 'Đã kết nối: ' + connectedAccount + '\nTiếp theo: "Lấy nonce từ API" rồi "Ký với MetaMask".');
+        } catch (err) {
+          showError(err, 'Kết nối MetaMask');
+        } finally {
+          els.btnConnect.disabled = false;
+        }
+      }
+
+      async function fetchNonce() {
+        const walletAddress = els.walletAddress.value.trim();
+        if (!walletAddress) {
+          setStatus('error', 'Nhập địa chỉ ví hoặc bấm "Kết nối MetaMask" trước.');
+          return;
+        }
+        els.btnNonce.disabled = true;
+        setStatus('info', 'Đang gọi POST /api/auth/nonce…');
+        try {
+          const res = await fetch(API_BASE + '/api/auth/nonce', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ walletAddress: walletAddress }),
+          });
+          const data = await res.json();
+          if (!res.ok || !data.success) {
+            throw new Error(data.error || 'HTTP ' + res.status);
+          }
+          els.nonce.value = data.nonce;
+          if (data.domain) els.domain.value = data.domain;
+          if (data.chainId) els.chainId.value = String(data.chainId);
+          if (data.walletAddress) els.walletAddress.value = data.walletAddress;
+          setStatus('ok', 'Đã lấy nonce. Bấm "Ký với MetaMask".');
+        } catch (err) {
+          showError(err, 'Lấy nonce thất bại');
+        } finally {
+          els.btnNonce.disabled = false;
+        }
+      }
+
+      function buildMessageString() {
+        const walletAddress = els.walletAddress.value.trim();
+        const nonce = els.nonce.value.trim();
+        const domain = els.domain.value.trim();
+        const uri = els.uri.value.trim();
+        const chainId = Number(els.chainId.value);
+
+        if (!walletAddress || !nonce || !domain || !uri || !chainId) {
+          throw new Error('Điền đủ ví, nonce, domain, uri và chainId.');
+        }
+
+        return prepareSiweMessage({
+          domain: domain,
+          address: walletAddress,
+          statement: STATEMENT,
+          uri: uri,
+          version: '1',
+          chainId: chainId,
+          nonce: nonce,
+        });
+      }
+
+      async function signSiwe() {
+        const ethereum = getEthereum();
+        if (!ethereum) {
+          showError(new Error('MetaMask không khả dụng. Dùng http://127.0.0.1:5000/siwe-sign.html.'), 'Ký');
+          return;
+        }
+
+        let prepared;
+        try {
+          prepared = buildMessageString();
+        } catch (err) {
+          showError(err, 'Tạo message');
+          return;
+        }
+
         els.btnSign.disabled = true;
-        return false;
-      }
-      setStatus('ok', 'MetaMask sẵn sàng. Kết nối ví hoặc lấy nonce từ API.');
-      return true;
-    }
+        setStatus('info', 'Đang kết nối ví và chờ xác nhận ký trong MetaMask…');
 
-    async function connectWallet() {
-      const ethereum = getEthereum();
-      if (!ethereum) return;
-      try {
-        const accounts = await ethereum.request({ method: 'eth_requestAccounts' });
-        if (accounts?.[0]) {
-          els.walletAddress.value = accounts[0];
-          setStatus('ok', `Đã kết nối: ${accounts[0]}`);
+        try {
+          const accounts = await ethereum.request({ method: 'eth_requestAccounts' });
+          if (!accounts || !accounts[0]) {
+            throw new Error('Chưa kết nối ví — bấm "Kết nối MetaMask" trước.');
+          }
+          const signer = accounts[0];
+          connectedAccount = signer;
+          els.walletAddress.value = signer;
+
+          const formAddr = els.walletAddress.value.trim().toLowerCase();
+          if (formAddr && signer.toLowerCase() !== formAddr) {
+            throw new Error('Ví MetaMask (' + signer + ') không khớp ô địa chỉ (' + els.walletAddress.value + ').');
+          }
+
+          const targetChain = Number(els.chainId.value) || SEPOLIA_CHAIN_ID;
+          await ensureSepolia(ethereum, targetChain);
+
+          prepared = buildMessageString();
+
+          const signature = await ethereum.request({
+            method: 'personal_sign',
+            params: [prepared, signer],
+          });
+
+          els.outMessage.value = prepared;
+          els.outSignature.value = signature;
+          setStatus('ok', 'Đã ký thành công.\nCopy message + signature sang Postman hoặc api-tests.http.');
+        } catch (err) {
+          showError(err, 'Ký SIWE');
+        } finally {
+          els.btnSign.disabled = false;
         }
-      } catch (err) {
-        setStatus('error', err.message || 'Người dùng từ chối kết nối ví.');
-      }
-    }
-
-    async function fetchNonce() {
-      const walletAddress = els.walletAddress.value.trim();
-      if (!walletAddress) {
-        setStatus('error', 'Nhập địa chỉ ví trước khi lấy nonce.');
-        return;
-      }
-      els.btnNonce.disabled = true;
-      setStatus('info', 'Đang gọi POST /api/auth/nonce…');
-      try {
-        const res = await fetch(`${API_BASE}/api/auth/nonce`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ walletAddress }),
-        });
-        const data = await res.json();
-        if (!res.ok || !data.success) {
-          throw new Error(data.error || `HTTP ${res.status}`);
-        }
-        els.nonce.value = data.nonce;
-        if (data.domain) els.domain.value = data.domain;
-        if (data.chainId) els.chainId.value = String(data.chainId);
-        if (data.walletAddress) els.walletAddress.value = data.walletAddress;
-        setStatus('ok', 'Đã lấy nonce. Bấm "Ký với MetaMask".');
-      } catch (err) {
-        setStatus('error', `Lấy nonce thất bại: ${err.message}. Backend + MongoDB đang chạy?`);
-      } finally {
-        els.btnNonce.disabled = false;
-      }
-    }
-
-    function buildMessage() {
-      const walletAddress = els.walletAddress.value.trim();
-      const nonce = els.nonce.value.trim();
-      const domain = els.domain.value.trim();
-      const uri = els.uri.value.trim();
-      const chainId = Number(els.chainId.value);
-
-      if (!walletAddress || !nonce || !domain || !uri || !chainId) {
-        throw new Error('Điền đủ ví, nonce, domain, uri và chainId.');
       }
 
-      return new SiweMessage({
-        domain,
-        address: walletAddress,
-        statement: STATEMENT,
-        uri,
-        version: '1',
-        chainId,
-        nonce,
+      els.btnConnect.addEventListener('click', function (e) {
+        e.preventDefault();
+        connectWallet();
       });
-    }
+      els.btnNonce.addEventListener('click', function (e) {
+        e.preventDefault();
+        fetchNonce();
+      });
+      els.btnSign.addEventListener('click', function (e) {
+        e.preventDefault();
+        signSiwe();
+      });
 
-    async function signSiwe() {
-      const ethereum = getEthereum();
-      if (!ethereum) {
-        setStatus('error', 'MetaMask không khả dụng. Dùng http://127.0.0.1:5000/siwe-sign.html, không phải file://.');
-        return;
-      }
+      applyQueryParams();
+      checkEthereum();
 
-      let prepared;
-      try {
-        prepared = buildMessage().prepareMessage();
-      } catch (err) {
-        setStatus('error', err.message);
-        return;
-      }
-
-      const walletAddress = els.walletAddress.value.trim();
-      els.btnSign.disabled = true;
-      setStatus('info', 'Chờ xác nhận trong MetaMask…');
-
-      try {
-        const signature = await ethereum.request({
-          method: 'personal_sign',
-          params: [prepared, walletAddress],
-        });
-        els.outMessage.value = prepared;
-        els.outSignature.value = signature;
-        setStatus('ok', 'Đã ký. Copy message + signature sang api-tests.http hoặc Postman.');
-      } catch (err) {
-        setStatus('error', err.message || 'Ký thất bại hoặc bị hủy.');
-      } finally {
-        els.btnSign.disabled = false;
-      }
-    }
-
-    els.btnConnect.addEventListener('click', connectWallet);
-    els.btnNonce.addEventListener('click', fetchNonce);
-    els.btnSign.addEventListener('click', signSiwe);
-
-    applyQueryParams();
-    checkEthereum();
+      window.addEventListener('ethereum#initialized', checkEthereum);
+    })();
   </script>
 </body>
 </html>

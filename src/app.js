@@ -29,7 +29,7 @@ app.use(helmet({
     directives: {
       defaultSrc: ["'self'"],
       scriptSrc: ["'self'", 'https://esm.sh'],
-      connectSrc: ["'self'"],
+      connectSrc: ["'self'", 'https://esm.sh'],
       styleSrc: ["'self'", "'unsafe-inline'"],
     },
   },
