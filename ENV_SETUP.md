@@ -341,7 +341,7 @@ Theo `backend/src/config/blockchain.js` (checkout hiện tại):
 |-------------|-------------|----------|
 | `RPC_URL or SEPOLIA_RPC_URL is not defined` | Thiếu RPC | Thêm `RPC_URL=...` |
 | `MOCK_USDC_ADDRESS is not set` (hoặc contract khác) | Thiếu/sai địa chỉ | Copy từ `deployments/sepolia.json` |
-| `ABI not found for JobRegistry` | Chưa export ABI | Từ root: `npm run export-abis` |
+| `ABI not found for JobRegistry` | Chưa export ABI | Từ root: `npm run export-abis` (xem [ABI_WORKFLOW.md](./ABI_WORKFLOW.md)) |
 | MongoDB connection refused | Mongo chưa chạy / sai URI | Start Mongo hoặc sửa Atlas |
 | CORS error từ frontend | Sai `ALLOWED_ORIGINS` | Khớp URL frontend (port 3000) |
 | Tx revert / insufficient funds | `INDEXER_PRIVATE_KEY` ví hết Sepolia ETH | Faucet Sepolia cho ví indexer |
@@ -381,7 +381,7 @@ node -e "require('dotenv').config({path:'backend/.env'}); const {ethers}=require
 - [ ] 6 địa chỉ contract từ `deployments/sepolia.json`
 - [ ] `JWT_SECRET` đã đổi khỏi giá trị mẫu (nếu dùng auth)
 - [ ] `MONGODB_URI` trỏ đúng DB đang chạy (nếu dùng API + DB)
-- [ ] `npm run export-abis` từ root (nếu chưa có file trong `backend/src/abi/`)
+- [ ] `npm run export-abis` từ root (nếu chưa có file trong `backend/src/abi/`) — **không** copy ABI từ Etherscan ([ABI_WORKFLOW.md](./ABI_WORKFLOW.md))
 - [ ] Chạy thử lệnh kiểm tra blockchain ở trên → `OK`
 
 ---

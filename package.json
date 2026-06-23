@@ -1,9 +1,11 @@
 {
   "name": "blockchain-backend",
   "version": "1.0.0",
-  "description": "��#\u0000 \u0000S\u0000h\u0000a\u0000r\u0000e\u0000V\u0000o\u0000l\u0000t\u0000 \u0000B\u0000a\u0000c\u0000k\u0000e\u0000n\u0000d\u0000\r\u0000 \u0000",
-  "main": "index.js",
+  "description": "ShareVolt Freelance DApp backend API",
+  "main": "src/server.js",
   "scripts": {
+    "start": "node src/server.js",
+    "dev": "nodemon src/server.js",
     "test": "node scripts/test-ipfs-pinata.js"
   },
   "repository": {
@@ -31,10 +33,14 @@
     "cors": "^2.8.6",
     "dotenv": "^17.4.2",
     "express": "^5.2.1",
+    "express-validator": "^7.2.1",
     "form-data": "^4.0.6",
     "helmet": "^8.2.0",
+    "jsonwebtoken": "^9.0.2",
     "mongoose": "^9.7.1",
     "morgan": "^1.11.0",
+    "multer": "^1.4.5-lts.2",
+    "node-cron": "^3.0.3",
     "winston": "^3.19.0"
   }
 }

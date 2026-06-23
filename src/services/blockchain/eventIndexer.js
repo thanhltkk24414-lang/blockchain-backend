@@ -3,6 +3,7 @@ const cron = require('node-cron');
 const Job = require('../../models/Job');
 const User = require('../../models/User');
 const Dispute = require('../../models/Dispute');
+const IndexerState = require('../../models/IndexerState');
 const blockchain = require('../../config/blockchain');
 const contractService = require('./contractService');
 const logger = require('../../utils/logger');
@@ -19,6 +20,12 @@ class EventIndexer {
   }
 
   async start() {
+    await blockchain.initialize();
+    const state = await IndexerState.findOne({ id: 'lastBlock' });
+    if (state) {
+      this.lastBlock = state.blockNumber;
+    }
+
     cron.schedule('*/30 * * * * *', async () => {
       if (this.isRunning) return;
       this.isRunning = true;
@@ -51,9 +58,15 @@ class EventIndexer {
       await this.indexJobCreated(fromBlock, toBlock);
       await this.indexJobStatusUpdated(fromBlock, toBlock);
       await this.indexFreelancerAssigned(fromBlock, toBlock);
+      await this.indexEscrowEvents(fromBlock, toBlock);
       await this.indexDisputeEvents(fromBlock, toBlock);
       
       this.lastBlock = toBlock;
+      await IndexerState.findOneAndUpdate(
+        { id: 'lastBlock' },
+        { blockNumber: toBlock, updatedAt: new Date() },
+        { upsert: true }
+      );
       logger.info(`✅ Indexed up to block ${toBlock}`);
     } catch (error) {
       logger.error('Index events error:', error);
@@ -66,7 +79,7 @@ class EventIndexer {
   
   async indexJobCreated(fromBlock, toBlock) {
     try {
-      const contract = blockchain.getContract('jobRegistry');
+      const contract = blockchain.getContract('JobRegistry');
       const filter = contract.filters.JobCreated();
       const events = await contract.queryFilter(filter, fromBlock, toBlock);
 
@@ -107,7 +120,7 @@ class EventIndexer {
   
   async indexJobStatusUpdated(fromBlock, toBlock) {
     try {
-      const contract = blockchain.getContract('jobRegistry');
+      const contract = blockchain.getContract('JobRegistry');
       const filter = contract.filters.JobStatusUpdated();
       const events = await contract.queryFilter(filter, fromBlock, toBlock);
 
@@ -146,7 +159,7 @@ class EventIndexer {
   
   async indexFreelancerAssigned(fromBlock, toBlock) {
     try {
-      const contract = blockchain.getContract('jobRegistry');
+      const contract = blockchain.getContract('JobRegistry');
       const filter = contract.filters.FreelancerAssigned();
       const events = await contract.queryFilter(filter, fromBlock, toBlock);
 
@@ -170,12 +183,61 @@ class EventIndexer {
   }
 
   // =============================================
+  // ESCROW EVENTS (EscrowVault)
+  // =============================================
+
+  async indexEscrowEvents(fromBlock, toBlock) {
+    try {
+      const contract = blockchain.getContract('EscrowVault');
+
+      const depositedFilter = contract.filters.EscrowDeposited();
+      const depositedEvents = await contract.queryFilter(depositedFilter, fromBlock, toBlock);
+      for (const event of depositedEvents) {
+        const jobId = Number(event.args.jobId);
+        const job = await Job.findOne({ onchainJobId: jobId });
+        if (!job) continue;
+        await job.updateStatus('ASSIGNED', 'EscrowDeposited', event.log?.transactionHash || '');
+        job.lastSyncedBlock = toBlock;
+        await job.save();
+        logger.info(`EscrowDeposited synced for job ${jobId}`);
+      }
+
+      const releasedFilter = contract.filters.FundsReleased();
+      const releasedEvents = await contract.queryFilter(releasedFilter, fromBlock, toBlock);
+      for (const event of releasedEvents) {
+        const jobId = Number(event.args.jobId);
+        const job = await Job.findOne({ onchainJobId: jobId });
+        if (!job) continue;
+        await job.updateStatus('COMPLETED', 'FundsReleased', event.log?.transactionHash || '');
+        job.lastSyncedBlock = toBlock;
+        await job.save();
+        logger.info(`FundsReleased synced for job ${jobId}`);
+      }
+
+      const disputeFilter = contract.filters.DisputeRaised();
+      const disputeEvents = await contract.queryFilter(disputeFilter, fromBlock, toBlock);
+      for (const event of disputeEvents) {
+        const jobId = Number(event.args.jobId);
+        const job = await Job.findOne({ onchainJobId: jobId });
+        if (!job) continue;
+        await job.updateStatus('DISPUTED', 'DisputeRaised', event.log?.transactionHash || '');
+        job.isDisputed = true;
+        job.lastSyncedBlock = toBlock;
+        await job.save();
+        logger.info(`DisputeRaised synced for job ${jobId}`);
+      }
+    } catch (error) {
+      logger.error('Index Escrow events error:', error);
+    }
+  }
+
+  // =============================================
   // DISPUTE EVENTS
   // =============================================
   
   async indexDisputeEvents(fromBlock, toBlock) {
     try {
-      const contract = blockchain.getContract('arbitratorPanel');
+      const contract = blockchain.getContract('ArbitratorPanel');
       
       // DisputeSetup
       const setupFilter = contract.filters.DisputeSetup();
