@@ -9,6 +9,7 @@
   const els = {
     status: document.getElementById('status'),
     walletAddress: document.getElementById('walletAddress'),
+    checksumAddress: document.getElementById('checksumAddress'),
     nonce: document.getElementById('nonce'),
     domain: document.getElementById('domain'),
     uri: document.getElementById('uri'),
@@ -23,24 +24,16 @@
 
   let connectedAccount = null;
 
-  /** Uses ethers.getAddress when available; otherwise MetaMask / nonce API checksummed address. */
+  function requireEthers() {
+    if (typeof window.ethers === 'undefined' || !window.ethers.getAddress) {
+      throw new Error('ethers chưa tải — hard refresh (Ctrl+Shift+R) rồi thử lại.');
+    }
+    return window.ethers;
+  }
+
+  /** Always EIP-55 via ethers.getAddress — never use raw MetaMask / form input. */
   function getChecksumAddress(address) {
-    const hex = address.trim();
-    if (!/^0x[0-9a-fA-F]{40}$/.test(hex)) {
-      throw new Error('Địa chỉ ví không hợp lệ.');
-    }
-    if (typeof window.ethers !== 'undefined' && window.ethers.getAddress) {
-      return window.ethers.getAddress(hex);
-    }
-    if (connectedAccount && hex.toLowerCase() === connectedAccount.toLowerCase()) {
-      return connectedAccount;
-    }
-    if (hex !== hex.toLowerCase() && hex !== hex.toUpperCase()) {
-      return hex;
-    }
-    throw new Error(
-      'Cần địa chỉ EIP-55: bấm "Kết nối MetaMask" rồi "Lấy nonce từ API" (server trả về checksum).'
-    );
+    return requireEthers().getAddress(String(address).trim());
   }
 
   function resolveSigningAddress() {
@@ -48,6 +41,17 @@
       throw new Error('Bấm "Kết nối MetaMask" trước.');
     }
     return getChecksumAddress(connectedAccount);
+  }
+
+  function setChecksumDisplay(address) {
+    if (!els.checksumAddress) return;
+    if (address) {
+      els.checksumAddress.textContent = address;
+      els.checksumAddress.className = 'checksum-ok';
+    } else {
+      els.checksumAddress.textContent = '(chưa có — kết nối ví và lấy nonce)';
+      els.checksumAddress.className = 'checksum-pending';
+    }
   }
 
   function setStatus(kind, text) {
@@ -169,17 +173,19 @@
     els.btnConnect.disabled = true;
     setStatus('info', 'Chờ MetaMask — chọn tài khoản…');
     try {
+      requireEthers();
       const accounts = await ethereum.request({ method: 'eth_requestAccounts' });
       if (!accounts || !accounts[0]) {
         throw new Error('Không có tài khoản nào được chọn.');
       }
-      connectedAccount = accounts[0];
+      connectedAccount = getChecksumAddress(accounts[0]);
       els.walletAddress.value = connectedAccount;
+      setChecksumDisplay(connectedAccount);
 
       const targetChain = Number(els.chainId.value) || SEPOLIA_CHAIN_ID;
       await ensureSepolia(ethereum, targetChain);
 
-      setStatus('ok', 'Đã kết nối: ' + connectedAccount + '\nTiếp theo: "Lấy nonce từ API" rồi "Ký với MetaMask".');
+      setStatus('ok', 'Đã kết nối (EIP-55): ' + connectedAccount + '\nTiếp theo: "Lấy nonce từ API" rồi "Ký với MetaMask".');
     } catch (err) {
       showError(err, 'Kết nối MetaMask');
     } finally {
@@ -210,10 +216,11 @@
       if (data.appUrl) els.uri.value = data.appUrl;
       if (data.chainId) els.chainId.value = String(data.chainId);
       if (data.walletAddress) {
-        connectedAccount = data.walletAddress;
-        els.walletAddress.value = data.walletAddress;
+        connectedAccount = getChecksumAddress(data.walletAddress);
+        els.walletAddress.value = connectedAccount;
+        setChecksumDisplay(connectedAccount);
       }
-      setStatus('ok', 'Đã lấy nonce. Bấm "Ký với MetaMask".');
+      setStatus('ok', 'Đã lấy nonce. EIP-55: ' + connectedAccount + '\nBấm "Ký với MetaMask".');
     } catch (err) {
       showError(err, 'Lấy nonce thất bại');
     } finally {
@@ -252,6 +259,7 @@
 
     let prepared;
     try {
+      requireEthers();
       prepared = buildMessageString();
     } catch (err) {
       showError(err, 'Tạo message');
@@ -259,20 +267,17 @@
     }
 
     els.btnSign.disabled = true;
-    setStatus('info', 'Đang kết nối ví và chờ xác nhận ký trong MetaMask…');
+    setStatus('info', 'Đang chờ xác nhận ký trong MetaMask…');
 
     try {
       const accounts = await ethereum.request({ method: 'eth_requestAccounts' });
       if (!accounts || !accounts[0]) {
         throw new Error('Chưa kết nối ví — bấm "Kết nối MetaMask" trước.');
       }
-      const signer = accounts[0];
+      const signer = getChecksumAddress(accounts[0]);
       connectedAccount = signer;
       els.walletAddress.value = signer;
-
-      if (signer.toLowerCase() !== connectedAccount.toLowerCase()) {
-        throw new Error('Ví MetaMask (' + signer + ') không khớp tài khoản đang ký.');
-      }
+      setChecksumDisplay(signer);
 
       const targetChain = Number(els.chainId.value) || SEPOLIA_CHAIN_ID;
       await ensureSepolia(ethereum, targetChain);
@@ -287,7 +292,11 @@
       els.outMessage.value = prepared;
       els.outSignature.value = signature;
       els.btnCopyPostman.disabled = false;
-      setStatus('ok', 'Đã ký thành công.\nBấm "Copy JSON cho Postman" → dán vào body verify, hoặc copy từng field vào biến Postman.');
+      setStatus(
+        'ok',
+        'Đã ký thành công.\nEIP-55 address: ' + signer +
+        '\nBấm "Copy JSON cho Postman" — dán nguyên khối vào POST /api/auth/verify (không sửa message).'
+      );
     } catch (err) {
       showError(err, 'Ký SIWE');
     } finally {
@@ -327,7 +336,7 @@
         document.execCommand('copy');
         document.body.removeChild(ta);
       }
-      setStatus('ok', 'Đã copy JSON cho Postman.\nDán vào body POST /api/auth/verify hoặc file verify-body.json (REST Client).');
+      setStatus('ok', 'Đã copy JSON cho Postman.\nDán vào body POST /api/auth/verify — không chỉnh sửa message sau khi ký.');
     } catch (err) {
       showError(err, 'Copy JSON');
     } finally {
@@ -354,6 +363,7 @@
 
   applyQueryParams();
   checkEthereum();
+  setChecksumDisplay(null);
 
   window.addEventListener('ethereum#initialized', checkEthereum);
 })();

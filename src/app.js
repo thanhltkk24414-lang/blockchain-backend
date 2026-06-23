@@ -53,6 +53,9 @@ app.use(morgan('dev'));
 // =============================================
 
 // SIWE signing helper (MetaMask needs http://, not file://)
+app.get('/js/ethers.umd.min.js', (req, res) => {
+  res.sendFile(path.join(__dirname, '..', 'node_modules', 'ethers', 'dist', 'ethers.umd.min.js'));
+});
 app.use(express.static(path.join(__dirname, '..', 'public')));
 const siweSignPage = path.join(__dirname, '..', 'public', 'siwe-sign.html');
 const siweSignRoutes = ['/siwe-sign', '/siwe-sign.html', '/siwe_sign', '/siwe_sign.html'];

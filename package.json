@@ -9,6 +9,8 @@
     "docker:mongo": "node scripts/docker-mongo.js",
     "test": "node scripts/test-ipfs-pinata.js",
     "test:auth": "node scripts/test-auth-load.js",
+    "test:siwe": "node scripts/test-siwe-auth.js",
+    "test:siwe:integration": "node scripts/test-siwe-auth.js --integration",
     "test:api": "node scripts/test-api-smoke.js"
   },
   "repository": {

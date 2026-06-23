@@ -28,10 +28,21 @@
       font-size: 0.85rem;
       margin-bottom: 1rem;
     }
+    #checksumAddress {
+      display: block;
+      margin-top: 0.35rem;
+      padding: 0.5rem;
+      font-family: ui-monospace, monospace;
+      font-size: 0.85rem;
+      border-radius: 4px;
+      word-break: break-all;
+    }
+    .checksum-pending { background: #f5f5f5; color: #666; }
+    .checksum-ok { background: #e8f5e9; color: #1b5e20; border: 1px solid #c8e6c9; }
   </style>
 </head>
 <body>
-  <div id="version-banner">SIWE Sign Page <strong>v3</strong> — EIP-55 checksum, CSP-safe. Hard refresh: Ctrl+Shift+R</div>
+  <div id="version-banner">SIWE Sign Page <strong>v4</strong> — ethers.getAddress, EIP-55 enforced. Hard refresh: Ctrl+Shift+R</div>
 
   <h1>Ký SIWE cho Fapex (MetaMask)</h1>
   <p>
@@ -45,6 +56,11 @@
   <label>Địa chỉ ví
     <input id="walletAddress" type="text" placeholder="0x…" autocomplete="off">
     <span class="hint">Phải trùng ví đang kết nối MetaMask</span>
+  </label>
+
+  <label>EIP-55 checksum (dùng khi ký &amp; Copy JSON)
+    <span id="checksumAddress" class="checksum-pending">(chưa có — kết nối ví và lấy nonce)</span>
+    <span class="hint">Ví dụ đúng: <code>0x523eBd853a1638065f148A05c0Ca423E490D92f7</code> — không phải <code>…16338865…</code></span>
   </label>
 
   <label>Nonce
@@ -81,6 +97,7 @@
     <textarea id="outSignature" readonly placeholder="0x…"></textarea>
   </label>
 
+  <script src="/js/ethers.umd.min.js"></script>
   <script src="/js/siwe-sign.js" defer></script>
 </body>
 </html>

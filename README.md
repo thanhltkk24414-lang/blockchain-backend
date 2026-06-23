@@ -28,4 +28,6 @@ Phan cong chi tiet: docs/guides/task-split.md trong monorepo.
 6. `POST /api/auth/verify` with that JSON body (message + signature). Do not edit the message after signing.
 7. Copy `token` from response → `Authorization: Bearer <token>` for `GET /api/auth/me`.
 
-**Common failures:** wrong EIP-55 in message (`0x523eBd…` not `0x523e8d…`); signature from an old message after re-fetching nonce; `domain` must be `SIWE_DOMAIN` only (not full `APP_URL`); re-sign if you change nonce/domain/URI/chainId/address.
+**Common failures:** lowercase address in message (must be EIP-55, e.g. `0x523eBd853a1638065f148A05c0Ca423E490D92f7`); typo `16338865` vs correct `1638065`; signature from an old message after re-fetching nonce; `domain` must be `SIWE_DOMAIN` only (not full `APP_URL`); re-sign if you change nonce/domain/URI/chainId/address.
+
+Run `npm run test:siwe` (unit) and `npm run test:siwe:integration` (needs `npm start` + MongoDB).
