@@ -1,71 +1,86 @@
-// 📄 KIỂM TRA FILE NÀY ĐÃ CÓ CHƯA
 const jwt = require('jsonwebtoken');
 const User = require('../models/User');
 
-const auth = {
-  // Xác thực JWT từ header
-  authenticate: async (req, res, next) => {
-    try {
-      const token = req.headers.authorization?.split(' ')[1];
-      
-      if (!token) {
-        return res.status(401).json({
-          success: false,
-          error: 'No token provided'
-        });
-      }
+function getJwtSecret() {
+  const secret = process.env.JWT_SECRET;
+  if (!secret) {
+    throw new Error('JWT_SECRET is not defined');
+  }
+  return secret;
+}
 
-      const decoded = jwt.verify(token, process.env.JWT_SECRET);
-      const user = await User.findOne({ walletAddress: decoded.walletAddress });
-      
-      if (!user) {
-        return res.status(401).json({
-          success: false,
-          error: 'User not found'
-        });
-      }
+const generateToken = (walletAddress) => {
+  return jwt.sign(
+    { walletAddress: walletAddress.toLowerCase() },
+    getJwtSecret(),
+    { expiresIn: process.env.JWT_EXPIRES_IN || '7d' }
+  );
+};
 
-      req.user = user;
-      next();
-    } catch (error) {
+const authenticate = async (req, res, next) => {
+  try {
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
       return res.status(401).json({
         success: false,
-        error: 'Invalid token'
+        error: 'No token provided',
       });
     }
-  },
 
-  // Kiểm tra user có phải là client không
+    const token = authHeader.split(' ')[1];
+    const decoded = jwt.verify(token, getJwtSecret());
+    const user = await User.findOne({
+      walletAddress: decoded.walletAddress.toLowerCase(),
+    });
+
+    if (!user) {
+      return res.status(401).json({
+        success: false,
+        error: 'User not found',
+      });
+    }
+
+    if (!user.isActive) {
+      return res.status(403).json({
+        success: false,
+        error: 'Account is inactive',
+      });
+    }
+
+    req.user = user;
+    next();
+  } catch (error) {
+    return res.status(401).json({
+      success: false,
+      error: 'Invalid token',
+    });
+  }
+};
+
+const auth = {
+  authenticate,
+  requireAuth: authenticate,
+  generateToken,
+
   isClient: (req, res, next) => {
     if (!req.user) {
       return res.status(401).json({
         success: false,
-        error: 'Authentication required'
+        error: 'Authentication required',
       });
     }
-    // Client là người tạo job
     next();
   },
 
-  // Kiểm tra user có phải là freelancer không
   isFreelancer: (req, res, next) => {
     if (!req.user) {
       return res.status(401).json({
         success: false,
-        error: 'Authentication required'
+        error: 'Authentication required',
       });
     }
     next();
   },
-
-  // Tạo JWT token
-  generateToken: (walletAddress) => {
-    return jwt.sign(
-      { walletAddress },
-      process.env.JWT_SECRET,
-      { expiresIn: process.env.JWT_EXPIRES_IN || '7d' }
-    );
-  }
 };
 
 module.exports = auth;

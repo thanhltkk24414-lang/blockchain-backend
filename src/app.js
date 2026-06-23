@@ -7,6 +7,7 @@ const morgan = require('morgan');
 const { errorHandler } = require('./middleware/errorHandler');
 
 // Import routes
+const authRoutes = require('./routes/authRoutes');
 const userRoutes = require('./routes/userRoutes');
 const jobRoutes = require('./routes/jobRoutes');
 const bidRoutes = require('./routes/bidRoutes');
@@ -51,7 +52,8 @@ app.get('/health', (req, res) => {
   });
 });
 
-// API Routes - UNCOMMENT CÁC DÒNG NÀY
+// API Routes
+app.use('/api/auth', authRoutes);
 app.use('/api/users', userRoutes);
 app.use('/api/jobs', jobRoutes);
 app.use('/api/bids', bidRoutes);

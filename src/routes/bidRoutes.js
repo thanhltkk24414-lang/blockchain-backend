@@ -3,6 +3,7 @@ const express = require('express');
 const router = express.Router();
 const { body, param, query } = require('express-validator');
 const { validate } = require('../middleware/validation');
+const { authenticate } = require('../middleware/auth');
 
 // ============================================
 // CONTROLLER FUNCTIONS (Placeholder)
@@ -78,6 +79,7 @@ router.get(
  */
 router.post(
   '/',
+  authenticate,
   [
     body('jobId').notEmpty().isMongoId(),
     body('bidAmount').notEmpty().isInt({ min: 1 }),
@@ -96,6 +98,7 @@ router.post(
  */
 router.patch(
   '/:id/accept',
+  authenticate,
   [
     param('id').isMongoId()
   ],
@@ -109,6 +112,7 @@ router.patch(
  */
 router.patch(
   '/:id/reject',
+  authenticate,
   [
     param('id').isMongoId()
   ],
