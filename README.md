@@ -31,3 +31,11 @@ Phan cong chi tiet: docs/guides/task-split.md trong monorepo.
 **Common failures:** lowercase address in message (must be EIP-55, e.g. `0x523eBd853a1638065f148A05c0Ca423E490D92f7`); typo `16338865` vs correct `1638065`; signature from an old message after re-fetching nonce; `domain` must be `SIWE_DOMAIN` only (not full `APP_URL`); re-sign if you change nonce/domain/URI/chainId/address.
 
 Run `npm run test:siwe` (unit) and `npm run test:siwe:integration` (needs `npm start` + MongoDB).
+
+## Deploy (Railway / Render)
+
+Production uses `Dockerfile`, `railway.toml`, and `render.yaml` in this repo. Set env vars from `.env.example` in the platform dashboard (never commit `.env`).
+
+Full steps: [docs/guides/deploy-backend.md](https://github.com/thanhltkk24414-lang/Blockchain-docs/blob/main/guides/deploy-backend.md) in the docs repo.
+
+Quick verify after deploy: `GET /health` on your public URL.
