@@ -1,7 +1,7 @@
 /**
  * Auth routes — SIWE + JWT
  *
- * POST /api/auth/nonce   { walletAddress }           → { nonce, domain, chainId }
+ * POST /api/auth/nonce   { walletAddress }           → { nonce, domain, appUrl, chainId, walletAddress }
  * POST /api/auth/verify  { message, signature }      → { token, user }
  * GET  /api/auth/me      Authorization: Bearer JWT  → { user }
  */

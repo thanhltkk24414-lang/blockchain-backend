@@ -1,15 +1,35 @@
 const crypto = require('crypto');
+const { getAddress } = require('ethers');
 const { SiweMessage } = require('siwe');
 const User = require('../models/User');
 const logger = require('../utils/logger');
 const { generateToken } = require('../middleware/auth');
 
 function normalizeAddress(address) {
-  return address.toLowerCase();
+  return getAddress(address).toLowerCase();
 }
 
 function getSiweDomain() {
-  return process.env.SIWE_DOMAIN || process.env.APP_URL || 'localhost';
+  return process.env.SIWE_DOMAIN || 'localhost';
+}
+
+function getAppUrl() {
+  return process.env.APP_URL || 'http://localhost:3000';
+}
+
+function formatSiweVerifyError(err) {
+  if (!err) return 'SIWE verification failed';
+  if (typeof err === 'string') return err;
+
+  const inner = err.error || err;
+  if (inner && inner.type) {
+    const parts = [inner.type];
+    if (inner.expected) parts.push(`expected: ${inner.expected}`);
+    if (inner.received) parts.push(`received: ${inner.received}`);
+    return parts.join(' — ');
+  }
+  if (inner && inner.message) return inner.message;
+  return 'SIWE verification failed';
 }
 
 function getChainId() {
@@ -50,8 +70,9 @@ const authController = {
       res.json({
         success: true,
         nonce: user.nonce,
-        walletAddress: user.walletAddress,
+        walletAddress: getAddress(walletAddress),
         domain: getSiweDomain(),
+        appUrl: getAppUrl(),
         chainId: getChainId(),
       });
     } catch (error) {
@@ -82,22 +103,36 @@ const authController = {
         });
       }
 
+      if (normalizeAddress(siweMessage.address) !== user.walletAddress) {
+        return res.status(401).json({
+          success: false,
+          error: 'Message address does not match the wallet that requested the nonce.',
+        });
+      }
+
       const expectedChainId = getChainId();
       const expectedDomain = getSiweDomain();
 
-      const { success, data } = await siweMessage.verify({
-        signature,
-        nonce: user.nonce,
-        domain: expectedDomain,
-        time: new Date(),
-      });
+      const verifyResult = await siweMessage.verify(
+        {
+          signature,
+          nonce: user.nonce,
+          domain: expectedDomain,
+          time: new Date(),
+        },
+        { suppressExceptions: true }
+      );
 
-      if (!success) {
+      if (!verifyResult.success) {
+        const detail = formatSiweVerifyError(verifyResult);
+        logger.error('SIWE verify failed:', verifyResult.error || verifyResult);
         return res.status(401).json({
           success: false,
-          error: 'SIWE verification failed',
+          error: detail,
         });
       }
+
+      const { data } = verifyResult;
 
       if (Number(data.chainId) !== expectedChainId) {
         return res.status(401).json({
@@ -127,7 +162,7 @@ const authController = {
       logger.error('SIWE verify error:', error);
       res.status(401).json({
         success: false,
-        error: error.message || 'SIWE verification failed',
+        error: formatSiweVerifyError(error),
       });
     }
   },

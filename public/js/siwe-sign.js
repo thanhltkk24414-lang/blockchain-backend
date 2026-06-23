@@ -23,6 +23,33 @@
 
   let connectedAccount = null;
 
+  /** Uses ethers.getAddress when available; otherwise MetaMask / nonce API checksummed address. */
+  function getChecksumAddress(address) {
+    const hex = address.trim();
+    if (!/^0x[0-9a-fA-F]{40}$/.test(hex)) {
+      throw new Error('Địa chỉ ví không hợp lệ.');
+    }
+    if (typeof window.ethers !== 'undefined' && window.ethers.getAddress) {
+      return window.ethers.getAddress(hex);
+    }
+    if (connectedAccount && hex.toLowerCase() === connectedAccount.toLowerCase()) {
+      return connectedAccount;
+    }
+    if (hex !== hex.toLowerCase() && hex !== hex.toUpperCase()) {
+      return hex;
+    }
+    throw new Error(
+      'Cần địa chỉ EIP-55: bấm "Kết nối MetaMask" rồi "Lấy nonce từ API" (server trả về checksum).'
+    );
+  }
+
+  function resolveSigningAddress() {
+    if (!connectedAccount) {
+      throw new Error('Bấm "Kết nối MetaMask" trước.');
+    }
+    return getChecksumAddress(connectedAccount);
+  }
+
   function setStatus(kind, text) {
     els.status.className = kind;
     els.status.textContent = text;
@@ -161,11 +188,11 @@
   }
 
   async function fetchNonce() {
-    const walletAddress = els.walletAddress.value.trim();
-    if (!walletAddress) {
-      setStatus('error', 'Nhập địa chỉ ví hoặc bấm "Kết nối MetaMask" trước.');
+    if (!connectedAccount) {
+      setStatus('error', 'Bấm "Kết nối MetaMask" trước khi lấy nonce.');
       return;
     }
+    const walletAddress = getChecksumAddress(connectedAccount);
     els.btnNonce.disabled = true;
     setStatus('info', 'Đang gọi POST /api/auth/nonce…');
     try {
@@ -180,8 +207,12 @@
       }
       els.nonce.value = data.nonce;
       if (data.domain) els.domain.value = data.domain;
+      if (data.appUrl) els.uri.value = data.appUrl;
       if (data.chainId) els.chainId.value = String(data.chainId);
-      if (data.walletAddress) els.walletAddress.value = data.walletAddress;
+      if (data.walletAddress) {
+        connectedAccount = data.walletAddress;
+        els.walletAddress.value = data.walletAddress;
+      }
       setStatus('ok', 'Đã lấy nonce. Bấm "Ký với MetaMask".');
     } catch (err) {
       showError(err, 'Lấy nonce thất bại');
@@ -191,14 +222,14 @@
   }
 
   function buildMessageString() {
-    const walletAddress = els.walletAddress.value.trim();
+    const walletAddress = resolveSigningAddress();
     const nonce = els.nonce.value.trim();
     const domain = els.domain.value.trim();
     const uri = els.uri.value.trim();
     const chainId = Number(els.chainId.value);
 
-    if (!walletAddress || !nonce || !domain || !uri || !chainId) {
-      throw new Error('Điền đủ ví, nonce, domain, uri và chainId.');
+    if (!nonce || !domain || !uri || !chainId) {
+      throw new Error('Điền đủ nonce, domain, uri và chainId (lấy nonce từ API).');
     }
 
     return prepareSiweMessage({
@@ -239,9 +270,8 @@
       connectedAccount = signer;
       els.walletAddress.value = signer;
 
-      const formAddr = els.walletAddress.value.trim().toLowerCase();
-      if (formAddr && signer.toLowerCase() !== formAddr) {
-        throw new Error('Ví MetaMask (' + signer + ') không khớp ô địa chỉ (' + els.walletAddress.value + ').');
+      if (signer.toLowerCase() !== connectedAccount.toLowerCase()) {
+        throw new Error('Ví MetaMask (' + signer + ') không khớp tài khoản đang ký.');
       }
 
       const targetChain = Number(els.chainId.value) || SEPOLIA_CHAIN_ID;
