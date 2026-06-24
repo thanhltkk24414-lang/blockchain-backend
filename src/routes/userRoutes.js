@@ -40,7 +40,8 @@ router.put(
     body('skills').optional().isArray(),
     body('hourlyRate').optional().isNumeric().isInt({ min: 0 }),
     body('location').optional().isString(),
-    body('avatar').optional().isString()
+    body('avatar').optional().isString(),
+    body('role').optional().isIn(['client', 'freelancer']),
   ],
   validate,
   userController.updateProfile

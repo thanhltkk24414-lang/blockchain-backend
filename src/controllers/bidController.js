@@ -19,8 +19,7 @@ const bidController = {
       const { jobId } = req.params;
       
       const bids = await Bid.find({ jobId })
-        .sort({ bidAmount: 1 })
-        .populate('freelancer', 'walletAddress username profile.fullName reputation');
+        .sort({ bidAmount: 1 });
 
       res.json({
         success: true,
@@ -113,12 +112,19 @@ const bidController = {
         timeline 
       } = req.body;
       
-      const freelancerAddress = req.user?.walletAddress;
+      const freelancerAddress = req.user?.walletAddress?.toLowerCase();
 
       if (!freelancerAddress) {
         return res.status(401).json({
           success: false,
-          error: 'Authentication required'
+          error: 'Authentication required',
+        });
+      }
+
+      if (req.user.role !== 'freelancer') {
+        return res.status(403).json({
+          success: false,
+          error: 'Only freelancers can submit bids',
         });
       }
 

@@ -97,8 +97,8 @@ GET {{baseUrl}}/api/jobs?page=1&limit=20
 # =============================================================================
 
 @baseUrlProd = https://fapex-backend-production.up.railway.app
-@walletAddressProd = 0xYourWalletAddressHere
-@authTokenProd =
+@walletAddressProd = 0x523eBd853a1638065f148A05c0Ca423E490D92f7
+@authTokenProd = eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ3YWxsZXRBZGRyZXNzIjoiMHhhN2FjODE1NGZhMzAxOWY1ZTk1YmEzNzIwMjQwYzc4MmMwZTNlZDcwIiwiaWF0IjoxNzgyMjkzMjQzLCJleHAiOjE3ODI4OTgwNDN9._Qm9v82WD4w3eQ9o-jO5JyXIdBQpR8fOq9tJYav0PGU
 
 @siweMessageProd = PASTE_FULL_SIWE_MESSAGE_HERE
 @siweSignatureProd = 0xPASTE_SIGNATURE_HERE

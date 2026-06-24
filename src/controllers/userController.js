@@ -31,11 +31,12 @@ const userController = {
         user: {
           walletAddress: user.walletAddress,
           username: user.username,
+          role: user.role,
           profile: user.profile,
           reputation: user.reputation,
           stats: user.stats,
-          isActive: user.isActive
-        }
+          isActive: user.isActive,
+        },
       });
     } catch (error) {
       logger.error('Get profile error:', error);
@@ -52,8 +53,18 @@ const userController = {
    */
   updateProfile: async (req, res) => {
     try {
-      const { fullName, bio, skills, hourlyRate, location, avatar } = req.body;
+      const { fullName, bio, skills, hourlyRate, location, avatar, role } = req.body;
       const user = req.user; // Từ middleware auth
+
+      if (role !== undefined) {
+        if (!['client', 'freelancer'].includes(role)) {
+          return res.status(400).json({
+            success: false,
+            error: 'Role must be client or freelancer',
+          });
+        }
+        user.role = role;
+      }
 
       // Cập nhật từng trường
       if (fullName) user.profile.fullName = fullName;
