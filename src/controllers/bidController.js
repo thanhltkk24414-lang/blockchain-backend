@@ -261,39 +261,21 @@ const bidController = {
       const onchainJobId = Number(
         bid.onchainJobId ?? bid.job.onchainJobId
       );
-      let assignTxHash;
-      if (contractService.isValidOnchainJobId(onchainJobId)) {
-        try {
-          const assignResult = await contractService.assignFreelancer(
-            onchainJobId,
-            bid.freelancerAddress
-          );
-          assignTxHash = assignResult.hash;
-        } catch (chainError) {
-          logger.error('On-chain assignFreelancer failed after DB accept', chainError);
-          return res.status(503).json({
-            success: false,
-            error: chainError.message || 'On-chain assignFreelancer failed',
-            code: 'ONCHAIN_ASSIGN_FAILED',
-            hint:
-              'Bid was marked accepted in the database but JobRegistry.assignFreelancer failed. ' +
-              'Ensure INDEXER_PRIVATE_KEY matches the wallet that created the job on-chain.',
-          });
-        }
-      }
+
+      // On-chain assign + escrow happen together in client depositEscrow() while job is OPEN.
+      // Do NOT call assignFreelancer here — it moves job to ASSIGNED and blocks depositEscrow.
 
       await bid.job.updateStatus(
         'ASSIGNED',
-        `Freelancer ${bid.freelancerAddress} assigned`,
-        assignTxHash || ''
+        `Freelancer ${bid.freelancerAddress} accepted (pending on-chain escrow deposit)`,
+        ''
       );
 
       res.json({
         success: true,
-        message: 'Bid accepted',
+        message: 'Bid accepted — client should fund escrow on-chain',
         bid,
         onchainJobId,
-        assignTxHash,
       });
 
     } catch (error) {
