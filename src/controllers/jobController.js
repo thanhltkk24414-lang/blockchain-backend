@@ -266,7 +266,7 @@ const jobController = {
       
       const metadataResult = await ipfsService.uploadJSON(metadata);
 
-      // 3. Call smart contract
+      // 3. Register job on JobRegistry (requires INDEXER_PRIVATE_KEY + RPC_URL + gas)
       let jobId;
       try {
         jobId = await contractService.createJob(
@@ -276,9 +276,24 @@ const jobController = {
           duration
         );
       } catch (contractError) {
-        logger.error('Contract call failed:', contractError);
-        // Fallback: tạo job ID tạm
-        jobId = Date.now();
+        logger.error('On-chain createJob failed — job not saved', contractError);
+        return res.status(503).json({
+          success: false,
+          error: contractError.message || 'On-chain job registration failed',
+          code: 'ONCHAIN_JOB_CREATE_FAILED',
+          hint:
+            'Set RPC_URL and INDEXER_PRIVATE_KEY on the backend to a Sepolia wallet funded with ETH for gas. ' +
+            'Without a successful createJob tx, jobs cannot receive on-chain bids or escrow.',
+        });
+      }
+
+      if (!contractService.isValidOnchainJobId(jobId)) {
+        logger.error(`Refusing to save job with invalid onchainJobId: ${jobId}`);
+        return res.status(503).json({
+          success: false,
+          error: `Invalid on-chain job id: ${jobId}`,
+          code: 'ONCHAIN_JOB_ID_INVALID',
+        });
       }
 
       // 4. Save to database
