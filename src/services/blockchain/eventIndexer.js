@@ -5,6 +5,7 @@ const Dispute = require('../../models/Dispute');
 const IndexerState = require('../../models/IndexerState');
 const blockchain = require('../../config/blockchain');
 const contractService = require('./contractService');
+const { notifyJobChange, notifyDispute } = require('../notifications/notificationService');
 const logger = require('../../utils/logger');
 
 const DEFAULT_BATCH_SIZE = 100;
@@ -175,6 +176,10 @@ class EventIndexer {
 
         await job.save();
         logger.info(`Job ${jobNumber} synced from chain`);
+        notifyJobChange(job, 'job:created', {
+          source: 'event_indexer',
+          transactionHash: event.log?.transactionHash || null,
+        });
       }
     } catch (error) {
       if (isRateLimitError(error)) throw error;
@@ -211,6 +216,10 @@ class EventIndexer {
         await job.save();
 
         logger.info(`Job ${jobNumber} status updated to ${status}`);
+        notifyJobChange(job, 'job:status_updated', {
+          source: 'event_indexer',
+          transactionHash: event.log?.transactionHash || null,
+        });
       }
     } catch (error) {
       if (isRateLimitError(error)) throw error;
@@ -237,6 +246,11 @@ class EventIndexer {
         await job.save();
 
         logger.info(`Freelancer assigned to job ${jobNumber}`);
+        notifyJobChange(job, 'job:freelancer_assigned', {
+          source: 'event_indexer',
+          freelancerAddress: freelancer.toLowerCase(),
+          transactionHash: event.log?.transactionHash || null,
+        });
       }
     } catch (error) {
       if (isRateLimitError(error)) throw error;
@@ -263,6 +277,10 @@ class EventIndexer {
         job.lastSyncedBlock = toBlock;
         await job.save();
         logger.info(`EscrowDeposited synced for job ${jobId}`);
+        notifyJobChange(job, 'escrow:deposited', {
+          source: 'event_indexer',
+          transactionHash: event.log?.transactionHash || null,
+        });
       }
 
       await delay(this.rpcDelayMs);
@@ -282,6 +300,10 @@ class EventIndexer {
         job.lastSyncedBlock = toBlock;
         await job.save();
         logger.info(`FundsReleased synced for job ${jobId}`);
+        notifyJobChange(job, 'escrow:released', {
+          source: 'event_indexer',
+          transactionHash: event.log?.transactionHash || null,
+        });
       }
 
       await delay(this.rpcDelayMs);
@@ -302,6 +324,10 @@ class EventIndexer {
         job.lastSyncedBlock = toBlock;
         await job.save();
         logger.info(`DisputeRaised synced for job ${jobId}`);
+        notifyJobChange(job, 'escrow:dispute_raised', {
+          source: 'event_indexer',
+          transactionHash: event.log?.transactionHash || null,
+        });
       }
     } catch (error) {
       if (isRateLimitError(error)) throw error;
@@ -351,6 +377,10 @@ class EventIndexer {
         await job.save();
 
         logger.info(`Dispute created for job ${jobNumber}`);
+        notifyDispute(dispute, job, 'dispute:opened', {
+          source: 'event_indexer',
+          transactionHash: event.log?.transactionHash || null,
+        });
       }
 
       await delay(this.rpcDelayMs);
@@ -391,6 +421,11 @@ class EventIndexer {
         }
 
         logger.info(`Dispute finalized for job ${jobNumber}: ${dispute.result}`);
+        notifyDispute(dispute, job, 'dispute:finalized', {
+          source: 'event_indexer',
+          jobStatus: job?.status || null,
+          transactionHash: event.log?.transactionHash || null,
+        });
       }
     } catch (error) {
       if (isRateLimitError(error)) throw error;

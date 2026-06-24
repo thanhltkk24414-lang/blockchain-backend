@@ -74,6 +74,11 @@ app.get('/health', (req, res) => {
     uptime: process.uptime(),
     environment: process.env.NODE_ENV || 'development',
     mongodb: mongoStates[mongoose.connection.readyState] || 'unknown',
+    websocket: {
+      enabled: true,
+      path: '/socket.io',
+      auth: 'JWT (SIWE login token)',
+    },
   });
 });
 

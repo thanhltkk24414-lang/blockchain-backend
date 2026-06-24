@@ -57,10 +57,16 @@ const authenticate = async (req, res, next) => {
   }
 };
 
+const verifyToken = (token) => {
+  return jwt.verify(token, getJwtSecret());
+};
+
 const auth = {
   authenticate,
   requireAuth: authenticate,
   generateToken,
+  verifyToken,
+  getJwtSecret,
 
   isClient: (req, res, next) => {
     if (!req.user) {

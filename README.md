@@ -32,6 +32,48 @@ Phan cong chi tiet: docs/guides/task-split.md trong monorepo.
 
 Run `npm run test:siwe` (unit) and `npm run test:siwe:integration` (needs `npm start` + MongoDB).
 
+## WebSocket notifications (Socket.io)
+
+Realtime job/escrow updates for the frontend UI. Requires JWT from SIWE login.
+
+**Connect (browser or Node client):**
+
+```javascript
+import { io } from 'socket.io-client';
+
+const socket = io('http://127.0.0.1:5000', {
+  path: '/socket.io',
+  auth: { token: '<JWT from POST /api/auth/verify>' },
+  transports: ['websocket', 'polling'],
+});
+
+socket.on('connected', (data) => console.log('authenticated', data.walletAddress));
+socket.on('job:updated', (payload) => console.log('job update', payload));
+socket.emit('subscribe:job', onchainJobId); // optional: job-specific room
+```
+
+**Server → client events**
+
+| Event | When |
+|-------|------|
+| `connected` | After JWT auth succeeds |
+| `job:updated` | Any job/escrow status change (umbrella) |
+| `job:created` | `JobCreated` indexed |
+| `job:status_updated` | `JobStatusUpdated` indexed |
+| `job:freelancer_assigned` | `FreelancerAssigned` indexed |
+| `escrow:deposited` | `EscrowDeposited` |
+| `escrow:released` | `FundsReleased` |
+| `escrow:dispute_raised` | `DisputeRaised` |
+| `dispute:updated` | Dispute opened/finalized (umbrella) |
+| `dispute:opened` | `DisputeSetup` indexed |
+| `dispute:finalized` | `DisputeFinalized` indexed |
+
+**Client → server events:** `subscribe:job`, `unsubscribe:job` (pass `onchainJobId`).
+
+Notifications are emitted when the event indexer or realtime EscrowVault listener (`SEPOLIA_WSS_URL`) syncs chain events to MongoDB.
+
+Run `npm run test:socket` (unit) and `npm run test:socket:integration` (needs `npm start` + MongoDB + `JWT_SECRET`).
+
 ## Deploy (Railway / Render)
 
 Production uses `Dockerfile`, `railway.toml`, and `render.yaml` in this repo. Set env vars from `.env.example` in the platform dashboard (never commit `.env`).
