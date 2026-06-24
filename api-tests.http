@@ -3,6 +3,10 @@
 # Usage: open this file → click "Send Request" above each ### block
 # Windows: use 127.0.0.1 instead of localhost (avoids IPv6 hangs)
 
+# =============================================================================
+# Local (default)
+# =============================================================================
+
 @baseUrl = http://127.0.0.1:5000
 @walletAddress = 0xYourWalletAddressHere
 @authToken =
@@ -83,3 +87,87 @@ Content-Type: application/json
 
 ### 07 — GET /api/jobs (public list)
 GET {{baseUrl}}/api/jobs?page=1&limit=20
+
+# =============================================================================
+# Production — Railway
+# https://fapex-backend-production.up.railway.app
+# Guide: docs/guides/production-api-test-vi.md (monorepo docs submodule)
+# SIWE: https://fapex-backend-production.up.railway.app/siwe-sign.html
+# Verify: wallet required — use siwe-sign page, then 03b-prod or paste JSON into verify-body-prod.json
+# =============================================================================
+
+@baseUrlProd = https://fapex-backend-production.up.railway.app
+@walletAddressProd = 0xYourWalletAddressHere
+@authTokenProd =
+
+@siweMessageProd = PASTE_FULL_SIWE_MESSAGE_HERE
+@siweSignatureProd = 0xPASTE_SIGNATURE_HERE
+
+### 01-prod — GET /health (no auth)
+GET {{baseUrlProd}}/health
+
+### 02-prod — POST /api/auth/nonce (needs MongoDB on Railway)
+POST {{baseUrlProd}}/api/auth/nonce
+Content-Type: application/json
+
+{
+  "walletAddress": "{{walletAddressProd}}"
+}
+
+### 03-prod — POST /api/auth/verify (placeholder — prefer 03b-prod after signing on production siwe-sign.html)
+# domain/uri in signed message must match Railway SIWE_DOMAIN and APP_URL (see nonce response).
+POST {{baseUrlProd}}/api/auth/verify
+Content-Type: application/json
+
+{
+  "message": "{{siweMessageProd}}",
+  "signature": "{{siweSignatureProd}}"
+}
+
+### 03b-prod — POST /api/auth/verify (recommended — JSON from production siwe-sign "Copy JSON cho Postman")
+# 1. cp verify-body.json.example verify-body-prod.json
+# 2. Open https://fapex-backend-production.up.railway.app/siwe-sign.html → sign → Copy JSON
+# 3. Replace verify-body-prod.json contents → Send this request
+POST {{baseUrlProd}}/api/auth/verify
+Content-Type: application/json
+
+< ./verify-body-prod.json
+
+### 04-prod — GET /api/auth/me (JWT from verify → @authTokenProd)
+GET {{baseUrlProd}}/api/auth/me
+Authorization: Bearer {{authTokenProd}}
+
+### 05-prod — POST /api/ipfs/upload/metadata (JWT + Pinata on Railway)
+POST {{baseUrlProd}}/api/ipfs/upload/metadata
+Authorization: Bearer {{authTokenProd}}
+Content-Type: application/json
+
+{
+  "title": "Smart Contract Audit",
+  "description": "Audit Solidity escrow contracts on Sepolia testnet.",
+  "category": "development",
+  "skills": ["Solidity", "Security"],
+  "deliverables": "PDF audit report with findings and remediation plan.",
+  "acceptanceCriteria": "All critical and high issues documented with reproducible PoCs.",
+  "clientAddress": "{{walletAddressProd}}",
+  "createdAt": "2026-06-23T00:00:00.000Z"
+}
+
+### 06-prod — POST /api/jobs (JWT + MongoDB + Pinata + RPC on Railway)
+POST {{baseUrlProd}}/api/jobs
+Authorization: Bearer {{authTokenProd}}
+Content-Type: application/json
+
+{
+  "title": "Smart Contract Audit",
+  "description": "Audit Solidity escrow contracts on Sepolia testnet for security vulnerabilities.",
+  "category": "development",
+  "contractValue": 100,
+  "duration": 604800,
+  "skills": ["Solidity", "Security"],
+  "deliverables": "PDF audit report with findings and remediation plan.",
+  "acceptanceCriteria": "All critical and high issues documented with reproducible PoCs."
+}
+
+### 07-prod — GET /api/jobs (public list)
+GET {{baseUrlProd}}/api/jobs?page=1&limit=20
