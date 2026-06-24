@@ -23,4 +23,15 @@ BidSchema.methods.reject = async function rejectBid() {
   await this.save();
 };
 
+// Populate path `job` maps to the Job ref stored in `jobId`.
+BidSchema.virtual('job', {
+  ref: 'Job',
+  localField: 'jobId',
+  foreignField: '_id',
+  justOne: true,
+});
+
+BidSchema.set('toJSON', { virtuals: true });
+BidSchema.set('toObject', { virtuals: true });
+
 module.exports = mongoose.model('Bid', BidSchema);

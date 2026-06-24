@@ -51,7 +51,7 @@ const bidController = {
 
       const bids = await Bid.find(query)
         .sort({ createdAt: -1 })
-        .populate('job', 'title status contractValue');
+        .populate('job', 'title status contractValue clientAddress');
 
       res.json({
         success: true,
@@ -74,7 +74,6 @@ const bidController = {
   getBidById: async (req, res) => {
     try {
       const bid = await Bid.findById(req.params.id)
-        .populate('freelancer', 'walletAddress username profile')
         .populate('job');
 
       if (!bid) {

@@ -65,27 +65,89 @@ class ContractService {
   // 2. JOB REGISTRY
   // =============================================
 
-  async createJob(client, metadataCID, contractValue, duration) {
+  /** JobRegistry IDs are small sequential integers; timestamp fallbacks are ~1e12+. */
+  isValidOnchainJobId(jobId) {
+    const n = Number(jobId);
+    return Number.isFinite(n) && n > 0 && n < 10_000_000;
+  }
+
+  formatChainError(error, context) {
+    const parts = [error?.shortMessage, error?.reason, error?.message].filter(Boolean);
+    const detail = parts[0] || 'Unknown blockchain error';
+    return `${context}: ${detail}`;
+  }
+
+  async createJob(clientAddress, metadataCID, contractValue, duration) {
+    await this.init();
+
+    const signer = blockchain.getSigner();
+    if (!signer) {
+      throw new Error(
+        'INDEXER_PRIVATE_KEY is not set — backend cannot call JobRegistry.createJob. ' +
+          'Add a Sepolia wallet private key with ETH for gas (Railway env var INDEXER_PRIVATE_KEY).'
+      );
+    }
+
+    const contract = blockchain.getContract('JobRegistry');
+    const contractWithSigner = contract.connect(signer);
+    const signerAddress = await signer.getAddress();
+
+    logger.info(
+      `Submitting JobRegistry.createJob (signer=${signerAddress}, apiClient=${clientAddress})`
+    );
+
     try {
-      await this.init();
-      const contract = blockchain.getContract('JobRegistry');
-      const tx = await contract.createJob(metadataCID, contractValue, duration);
+      const tx = await contractWithSigner.createJob(metadataCID, contractValue, duration);
+      logger.info(`createJob tx submitted: ${tx.hash}`);
       const receipt = await tx.wait();
-      
+
       const event = receipt.logs
-        .map(log => {
+        .map((log) => {
           try {
             return contract.interface.parseLog(log);
-          } catch { return null; }
+          } catch {
+            return null;
+          }
         })
-        .find(parsed => parsed && parsed.name === 'JobCreated');
-      
+        .find((parsed) => parsed && parsed.name === 'JobCreated');
+
       const jobId = event?.args?.jobId;
-      logger.info(`✅ Job created on-chain: ${jobId}`);
-      return Number(jobId);
+      if (jobId == null) {
+        throw new Error(
+          `createJob tx ${receipt.hash} confirmed but JobCreated event was not found in receipt logs`
+        );
+      }
+
+      const numericJobId = Number(jobId);
+      if (!this.isValidOnchainJobId(numericJobId)) {
+        throw new Error(`createJob returned invalid jobId ${numericJobId} (expected sequential registry id)`);
+      }
+
+      const onChainJob = await this.getJob(numericJobId);
+      if (!onChainJob?.client) {
+        throw new Error(`Job ${numericJobId} not readable from JobRegistry after createJob`);
+      }
+
+      if (clientAddress && onChainJob.client.toLowerCase() !== clientAddress.toLowerCase()) {
+        logger.warn(
+          `On-chain job client (${onChainJob.client}) differs from API client (${clientAddress}). ` +
+            'Escrow/deposit must be sent from the on-chain client wallet or use the same wallet for INDEXER_PRIVATE_KEY in demos.'
+        );
+      }
+
+      logger.info(
+        `Job created on-chain: id=${numericJobId} tx=${receipt.hash} onChainClient=${onChainJob.client}`
+      );
+      return numericJobId;
     } catch (error) {
-      logger.error('Create job error:', error);
-      throw error;
+      logger.error('Create job on-chain failed', {
+        message: error.message,
+        code: error.code,
+        reason: error.reason,
+        apiClient: clientAddress,
+        signer: signerAddress,
+      });
+      throw new Error(this.formatChainError(error, 'JobRegistry.createJob failed'));
     }
   }
 
