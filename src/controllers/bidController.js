@@ -255,7 +255,8 @@ const bidController = {
 
       await bid.accept();
 
-      // Update job
+      bid.job.freelancerAddress = bid.freelancerAddress;
+      await bid.job.save();
       await bid.job.updateStatus('ASSIGNED', `Freelancer ${bid.freelancerAddress} assigned`);
 
       res.json({
