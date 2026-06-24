@@ -1,6 +1,7 @@
 // 📄 TOÀN BỘ FILE src/services/blockchain/contractService.js
 const blockchain = require('../../config/blockchain');
 const logger = require('../../utils/logger');
+const { toUsdcUnits, computeTotalDepositUnits } = require('../../utils/usdc');
 
 /**
  * 📝 Contract Service
@@ -97,7 +98,8 @@ class ContractService {
     );
 
     try {
-      const tx = await contractWithSigner.createJob(metadataCID, contractValue, duration);
+      const contractValueUnits = toUsdcUnits(contractValue);
+      const tx = await contractWithSigner.createJob(metadataCID, contractValueUnits, duration);
       logger.info(`createJob tx submitted: ${tx.hash}`);
       const receipt = await tx.wait();
 
@@ -251,7 +253,7 @@ class ContractService {
       await this.init();
       
       const job = await this.getJob(jobId);
-      const totalDeposit = Math.floor(job.contractValue * 1.03);
+      const totalDeposit = Number(computeTotalDepositUnits(job.contractValue));
       
       const usdcContract = blockchain.getContract('MockUSDC');
       const signer = blockchain.getSigner();
