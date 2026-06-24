@@ -3,6 +3,7 @@ const Bid = require('../models/Bid');
 const Job = require('../models/Job');
 const User = require('../models/User');
 const ipfsService = require('../config/ipfs');
+const contractService = require('../services/blockchain/contractService');
 const logger = require('../utils/logger');
 
 /**
@@ -256,12 +257,43 @@ const bidController = {
 
       bid.job.freelancerAddress = bid.freelancerAddress;
       await bid.job.save();
-      await bid.job.updateStatus('ASSIGNED', `Freelancer ${bid.freelancerAddress} assigned`);
+
+      const onchainJobId = Number(
+        bid.onchainJobId ?? bid.job.onchainJobId
+      );
+      let assignTxHash;
+      if (contractService.isValidOnchainJobId(onchainJobId)) {
+        try {
+          const assignResult = await contractService.assignFreelancer(
+            onchainJobId,
+            bid.freelancerAddress
+          );
+          assignTxHash = assignResult.hash;
+        } catch (chainError) {
+          logger.error('On-chain assignFreelancer failed after DB accept', chainError);
+          return res.status(503).json({
+            success: false,
+            error: chainError.message || 'On-chain assignFreelancer failed',
+            code: 'ONCHAIN_ASSIGN_FAILED',
+            hint:
+              'Bid was marked accepted in the database but JobRegistry.assignFreelancer failed. ' +
+              'Ensure INDEXER_PRIVATE_KEY matches the wallet that created the job on-chain.',
+          });
+        }
+      }
+
+      await bid.job.updateStatus(
+        'ASSIGNED',
+        `Freelancer ${bid.freelancerAddress} assigned`,
+        assignTxHash || ''
+      );
 
       res.json({
         success: true,
         message: 'Bid accepted',
-        bid
+        bid,
+        onchainJobId,
+        assignTxHash,
       });
 
     } catch (error) {

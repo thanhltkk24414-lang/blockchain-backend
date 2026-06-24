@@ -25,6 +25,12 @@ const JobSchema = new mongoose.Schema(
       index: true,
       description: 'Địa chỉ ví Client'
     },
+
+    onchainClientAddress: {
+      type: String,
+      lowercase: true,
+      description: 'Địa chỉ ví Client trên JobRegistry (msg.sender lúc createJob — thường là INDEXER wallet)'
+    },
     
     freelancerAddress: {
       type: String,

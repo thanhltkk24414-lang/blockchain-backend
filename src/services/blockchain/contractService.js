@@ -191,6 +191,57 @@ class ContractService {
     }
   }
 
+  /**
+   * JobRegistry.assignFreelancer — only the on-chain job client (msg.sender at createJob) may call.
+   * Backend uses INDEXER_PRIVATE_KEY because createJob is relayed from the same wallet.
+   */
+  async assignFreelancer(jobId, freelancerAddress) {
+    await this.init();
+
+    const signer = blockchain.getSigner();
+    if (!signer) {
+      throw new Error(
+        'INDEXER_PRIVATE_KEY is not set — backend cannot call JobRegistry.assignFreelancer.'
+      );
+    }
+
+    if (!this.isValidOnchainJobId(jobId)) {
+      throw new Error(`Invalid on-chain job id: ${jobId}`);
+    }
+
+    const contract = blockchain.getContract('JobRegistry');
+    const contractWithSigner = contract.connect(signer);
+    const signerAddress = await signer.getAddress();
+
+    const onChainJob = await this.getJob(jobId);
+    if (!onChainJob?.client) {
+      throw new Error(`Job ${jobId} not found on JobRegistry`);
+    }
+    if (onChainJob.client.toLowerCase() !== signerAddress.toLowerCase()) {
+      throw new Error(
+        `Indexer wallet (${signerAddress}) is not the on-chain client (${onChainJob.client}) for job ${jobId}`
+      );
+    }
+    if (onChainJob.status !== 0) {
+      throw new Error(`Job ${jobId} is not OPEN on-chain (status=${onChainJob.status})`);
+    }
+
+    logger.info(
+      `Submitting JobRegistry.assignFreelancer (job=${jobId}, freelancer=${freelancerAddress}, signer=${signerAddress})`
+    );
+
+    try {
+      const tx = await contractWithSigner.assignFreelancer(jobId, freelancerAddress);
+      logger.info(`assignFreelancer tx submitted: ${tx.hash}`);
+      const receipt = await tx.wait();
+      logger.info(`assignFreelancer confirmed for job ${jobId}: ${receipt.hash}`);
+      return { hash: receipt.hash, receipt };
+    } catch (error) {
+      logger.error('assignFreelancer error:', error);
+      throw new Error(this.formatChainError(error, 'JobRegistry.assignFreelancer failed'));
+    }
+  }
+
   // =============================================
   // 3. ESCROW VAULT
   // =============================================

@@ -171,3 +171,13 @@ Content-Type: application/json
 
 ### 07-prod — GET /api/jobs (public list)
 GET {{baseUrlProd}}/api/jobs?page=1&limit=20
+
+### 08-prod — POST /api/jobs/:id/assign-freelancer (JWT + INDEXER relay)
+# Use Mongo job _id and accepted freelancer address. Normally called automatically on PATCH /api/bids/:id/accept.
+POST {{baseUrlProd}}/api/jobs/PASTE_MONGO_JOB_ID/assign-freelancer
+Authorization: Bearer {{authTokenProd}}
+Content-Type: application/json
+
+{
+  "freelancerAddress": "{{walletAddressProd}}"
+}
