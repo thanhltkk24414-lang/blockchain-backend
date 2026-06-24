@@ -104,7 +104,8 @@ const bidController = {
   submitBid: async (req, res) => {
     try {
       const { 
-        jobId, 
+        jobId,
+        onchainJobId,
         bidAmount, 
         proposalCID,
         title, 
@@ -179,10 +180,20 @@ const bidController = {
         proposalCIDToUse = ipfsResult.cid;
       }
 
+      const resolvedOnchainJobId = Number(
+        onchainJobId ?? job.onchainJobId ?? job.onchainId
+      );
+      if (!Number.isFinite(resolvedOnchainJobId) || resolvedOnchainJobId <= 0) {
+        return res.status(400).json({
+          success: false,
+          error: 'Job has no on-chain ID; bids cannot be submitted until the job is registered',
+        });
+      }
+
       // 5. Create bid
       const bid = new Bid({
         jobId,
-        onchainJobId: job.onchainId,
+        onchainJobId: resolvedOnchainJobId,
         freelancerAddress,
         proposalCID: proposalCIDToUse,
         bidAmount,
