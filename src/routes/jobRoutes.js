@@ -76,6 +76,17 @@ router.post(
   jobController.createJob
 );
 
+router.post(
+  '/:id/assign-freelancer',
+  authenticate,
+  [
+    param('id').isMongoId(),
+    body('freelancerAddress').isEthereumAddress().withMessage('Invalid freelancer address'),
+  ],
+  validate,
+  jobController.assignFreelancer
+);
+
 router.patch(
   '/:id/status',
   authenticate,

@@ -297,10 +297,13 @@ const jobController = {
       }
 
       // 4. Save to database
+      const onChainJob = await contractService.getJob(jobId);
+      const onchainClientAddress = onChainJob?.client?.toLowerCase?.() || null;
       const deadline = Math.floor(Date.now() / 1000) + duration;
       const job = new Job({
         onchainJobId: jobId,
         clientAddress,
+        onchainClientAddress,
         metadataCID: metadataResult.cid,
         title,
         description,
@@ -326,6 +329,7 @@ const jobController = {
         message: 'Job created successfully',
         jobId: jobId,
         onchainJobId: jobId,
+        onchainClientAddress,
         metadataCID: metadataResult.cid,
         job
       });
@@ -335,6 +339,59 @@ const jobController = {
       res.status(500).json({ 
         success: false, 
         error: error.message 
+      });
+    }
+  },
+
+  /**
+   * POST /api/jobs/:id/assign-freelancer
+   * Relay JobRegistry.assignFreelancer via INDEXER wallet (on-chain client).
+   */
+  assignFreelancer: async (req, res) => {
+    try {
+      const { id } = req.params;
+      const { freelancerAddress } = req.body;
+      const user = req.user;
+
+      const job = await Job.findById(id);
+      if (!job) {
+        return res.status(404).json({ success: false, error: 'Job not found' });
+      }
+      if (job.clientAddress !== user.walletAddress) {
+        return res.status(403).json({ success: false, error: 'Only client can assign freelancer' });
+      }
+      if (!freelancerAddress) {
+        return res.status(400).json({ success: false, error: 'freelancerAddress is required' });
+      }
+      if (!contractService.isValidOnchainJobId(job.onchainJobId)) {
+        return res.status(400).json({ success: false, error: 'Job has no valid on-chain id' });
+      }
+
+      const result = await contractService.assignFreelancer(
+        job.onchainJobId,
+        freelancerAddress.toLowerCase()
+      );
+
+      job.freelancerAddress = freelancerAddress.toLowerCase();
+      await job.save();
+      await job.updateStatus(
+        'ASSIGNED',
+        `Freelancer ${freelancerAddress} assigned on-chain`,
+        result.hash
+      );
+
+      res.json({
+        success: true,
+        message: 'Freelancer assigned on-chain',
+        assignTxHash: result.hash,
+        job,
+      });
+    } catch (error) {
+      logger.error('Assign freelancer error:', error);
+      res.status(503).json({
+        success: false,
+        error: error.message,
+        code: 'ONCHAIN_ASSIGN_FAILED',
       });
     }
   },
