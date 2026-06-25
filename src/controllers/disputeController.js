@@ -27,9 +27,7 @@ const disputeController = {
         .sort({ createdAt: -1 })
         .skip(skip)
         .limit(parseInt(limit))
-        .populate('job', 'title status contractValue')
-        .populate('initiator', 'walletAddress username')
-        .populate('respondent', 'walletAddress username');
+        .populate('jobId', 'title status contractValue onchainJobId');
 
       const total = await Dispute.countDocuments(query);
 
@@ -61,9 +59,7 @@ const disputeController = {
       const { jobId } = req.params;
       
       const dispute = await Dispute.findOne({ jobId })
-        .populate('job')
-        .populate('initiator', 'walletAddress username')
-        .populate('respondent', 'walletAddress username');
+        .populate('jobId', 'title status contractValue onchainJobId clientAddress freelancerAddress');
 
       if (!dispute) {
         return res.status(404).json({ 
@@ -89,12 +85,30 @@ const disputeController = {
    * GET /api/disputes/:id
    * 📝 Lấy chi tiết dispute
    */
+  getDisputeByOnchainJob: async (req, res) => {
+    try {
+      const onchainJobId = Number(req.params.onchainJobId);
+      const dispute = await Dispute.findOne({ onchainJobId })
+        .populate('jobId', 'title status contractValue onchainJobId clientAddress freelancerAddress');
+
+      if (!dispute) {
+        return res.status(404).json({
+          success: false,
+          error: 'No dispute found for this on-chain job',
+        });
+      }
+
+      res.json({ success: true, dispute });
+    } catch (error) {
+      logger.error('Get dispute by onchain job error:', error);
+      res.status(500).json({ success: false, error: error.message });
+    }
+  },
+
   getDisputeById: async (req, res) => {
     try {
       const dispute = await Dispute.findById(req.params.id)
-        .populate('job')
-        .populate('initiator', 'walletAddress username profile')
-        .populate('respondent', 'walletAddress username profile');
+        .populate('jobId', 'title status contractValue onchainJobId clientAddress freelancerAddress');
 
       if (!dispute) {
         return res.status(404).json({ 
@@ -123,7 +137,7 @@ const disputeController = {
   raiseDispute: async (req, res) => {
     try {
       const { jobId, title, description, type } = req.body;
-      const initiatorAddress = req.user?.walletAddress;
+      const initiatorAddress = req.user?.walletAddress?.toLowerCase();
 
       if (!initiatorAddress) {
         return res.status(401).json({
@@ -178,10 +192,10 @@ const disputeController = {
       // 6. Create dispute
       const dispute = new Dispute({
         jobId,
-        onchainJobId: job.onchainId,
+        onchainJobId: job.onchainJobId,
         initiatorAddress,
-        respondentAddress: initiatorAddress === job.clientAddress 
-          ? job.freelancerAddress 
+        respondentAddress: initiatorAddress === job.clientAddress
+          ? job.freelancerAddress
           : job.clientAddress,
         title,
         description,
@@ -189,19 +203,17 @@ const disputeController = {
         disputeFee: Math.min(job.contractValue * 0.02, 50),
         totalFees: Math.min(job.contractValue * 0.02, 50),
         status: 'OPEN',
-        openedAt: new Date()
+        openedAt: new Date(),
       });
 
       await dispute.save();
 
-      // 7. Update job status
-      await job.updateStatus('DISPUTED', `Dispute raised: ${title}`);
+      await job.updateStatus('DISPUTED', `Dispute raised: ${title}`, '');
 
-      // 8. Call smart contract (nếu có)
       try {
-        await contractService.raiseDispute(job.onchainId, initiatorAddress);
+        await contractService.raiseDispute(job.onchainJobId);
       } catch (contractError) {
-        logger.warn('Contract call failed:', contractError);
+        logger.warn('Contract raiseDispute failed (client may raise on-chain via UI):', contractError.message);
       }
 
       res.status(201).json({
@@ -227,7 +239,7 @@ const disputeController = {
     try {
       const { id } = req.params;
       const { ipfsHash, description } = req.body;
-      const submitterAddress = req.user?.walletAddress;
+      const submitterAddress = req.user?.walletAddress?.toLowerCase();
 
       if (!submitterAddress) {
         return res.status(401).json({
@@ -236,7 +248,7 @@ const disputeController = {
         });
       }
 
-      const dispute = await Dispute.findById(id).populate('job');
+      const dispute = await Dispute.findById(id).populate('jobId');
       if (!dispute) {
         return res.status(404).json({ 
           success: false, 
