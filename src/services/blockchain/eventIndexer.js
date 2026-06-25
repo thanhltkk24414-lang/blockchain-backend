@@ -8,6 +8,7 @@ const contractService = require('./contractService');
 const { toChecksumAddress, normalizeAddress } = require('../../utils/address');
 const { notifyJobChange, notifyDispute } = require('../notifications/notificationService');
 const logger = require('../../utils/logger');
+const { attachJobScope, jobLookupFilter } = require('../../utils/jobScope');
 
 const DEFAULT_BATCH_SIZE = 100;
 const DEFAULT_POLL_CRON = '0 */2 * * * *'; // every 2 minutes
@@ -158,13 +159,13 @@ class EventIndexer {
         const { jobId, client, contractValue } = event.args;
         const jobNumber = Number(jobId);
 
-        const existing = await Job.findOne({ onchainJobId: jobNumber });
+        const existing = await Job.findOne(jobLookupFilter(jobNumber));
         if (existing) continue;
 
         const jobData = await contractService.getJob(jobNumber);
         await this.ensureUser(client);
 
-        const job = new Job({
+        const job = new Job(attachJobScope({
           onchainJobId: jobNumber,
           clientAddress: client.toLowerCase(),
           contractValue: Number(contractValue),
@@ -175,7 +176,7 @@ class EventIndexer {
           isActive: true,
           lastSyncedBlock: toBlock,
           isSynced: true,
-        });
+        }));
 
         await job.save();
         logger.info(`Job ${jobNumber} synced from chain`);
@@ -200,7 +201,7 @@ class EventIndexer {
         const { jobId, newStatus } = event.args;
         const jobNumber = Number(jobId);
 
-        const job = await Job.findOne({ onchainJobId: jobNumber });
+        const job = await Job.findOne(jobLookupFilter(jobNumber));
         if (!job) continue;
 
         const status = this.mapStatus(Number(newStatus));
@@ -255,7 +256,7 @@ class EventIndexer {
         const { jobId, freelancer } = event.args;
         const jobNumber = Number(jobId);
 
-        const job = await Job.findOne({ onchainJobId: jobNumber });
+        const job = await Job.findOne(jobLookupFilter(jobNumber));
         if (!job) continue;
 
         job.freelancerAddress = freelancer.toLowerCase();
@@ -294,7 +295,7 @@ class EventIndexer {
       );
       for (const event of depositedEvents) {
         const jobId = Number(event.args.jobId);
-        const job = await Job.findOne({ onchainJobId: jobId });
+        const job = await Job.findOne(jobLookupFilter(jobId));
         if (!job) continue;
 
         try {
@@ -329,7 +330,7 @@ class EventIndexer {
       );
       for (const event of releasedEvents) {
         const jobId = Number(event.args.jobId);
-        const job = await Job.findOne({ onchainJobId: jobId });
+        const job = await Job.findOne(jobLookupFilter(jobId));
         if (!job) continue;
         await job.updateStatus('COMPLETED', 'FundsReleased', event.log?.transactionHash || '');
         job.lastSyncedBlock = toBlock;
@@ -352,7 +353,7 @@ class EventIndexer {
       );
       for (const event of disputeEvents) {
         const jobId = Number(event.args.jobId);
-        const job = await Job.findOne({ onchainJobId: jobId });
+        const job = await Job.findOne(jobLookupFilter(jobId));
         if (!job) continue;
         await job.updateStatus('DISPUTED', 'DisputeRaised', event.log?.transactionHash || '');
         job.isDisputed = true;
@@ -383,7 +384,7 @@ class EventIndexer {
       );
       for (const event of startedEvents) {
         const jobId = Number(event.args.jobId);
-        const job = await Job.findOne({ onchainJobId: jobId });
+        const job = await Job.findOne(jobLookupFilter(jobId));
         if (!job) continue;
 
         await job.updateStatus('IN_PROGRESS', 'WorkStarted', event.log?.transactionHash || '');
@@ -408,7 +409,7 @@ class EventIndexer {
       for (const event of submittedEvents) {
         const jobId = Number(event.args.jobId);
         const deliverableCID = event.args.deliverableCID;
-        const job = await Job.findOne({ onchainJobId: jobId });
+        const job = await Job.findOne(jobLookupFilter(jobId));
         if (!job) continue;
 
         if (deliverableCID) {
@@ -446,7 +447,7 @@ class EventIndexer {
         const { jobId, arbitrators } = event.args;
         const jobNumber = Number(jobId);
 
-        const job = await Job.findOne({ onchainJobId: jobNumber });
+        const job = await Job.findOne(jobLookupFilter(jobNumber));
         if (!job) continue;
 
         const existing = await Dispute.findOne({ onchainJobId: jobNumber });
@@ -503,7 +504,7 @@ class EventIndexer {
         dispute.round = Number(round);
         await dispute.save();
 
-        const job = await Job.findOne({ onchainJobId: jobNumber });
+        const job = await Job.findOne(jobLookupFilter(jobNumber));
         if (job) {
           if (Number(result) === 1) {
             job.status = 'COMPLETED';

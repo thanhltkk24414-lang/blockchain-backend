@@ -6,6 +6,7 @@ const ipfsService = require('../config/ipfs');
 const contractService = require('../services/blockchain/contractService');
 const logger = require('../utils/logger');
 const { normalizeAddress, toChecksumAddress } = require('../utils/address');
+const { attachJobScope, jobLookupFilter, isDuplicateKeyError } = require('../utils/jobScope');
 
 /**
  * 📝 Job Controller
@@ -384,7 +385,31 @@ const jobController = {
       const onChainJob = await contractService.getJob(jobId);
       const onchainClientAddress = onChainJob?.client?.toLowerCase?.() || null;
       const deadline = Math.floor(Date.now() / 1000) + duration;
-      const job = new Job({
+
+      const scopedLookup = jobLookupFilter(jobId);
+      const existingJob = await Job.findOne(scopedLookup);
+      if (existingJob) {
+        if (existingJob.clientAddress === clientAddress) {
+          return res.status(200).json({
+            success: true,
+            message: 'Job already registered for this wallet',
+            jobId,
+            onchainJobId: jobId,
+            onchainClientAddress,
+            metadataCID: existingJob.metadataCID,
+            job: existingJob,
+          });
+        }
+        return res.status(409).json({
+          success: false,
+          code: 'ONCHAIN_JOB_ID_COLLISION',
+          error: `On-chain job id ${jobId} is already used in the database for this JobRegistry deployment.`,
+          hint:
+            'If JobRegistry was redeployed, run scripts/migrate-job-registry-index.js with LEGACY_JOB_REGISTRY_ADDRESS for old jobs, or remove stale MongoDB job records.',
+        });
+      }
+
+      const job = new Job(attachJobScope({
         onchainJobId: jobId,
         clientAddress,
         onchainClientAddress,
@@ -400,7 +425,7 @@ const jobController = {
         totalDeposit: contractValue * 1.03,
         platformFee: contractValue * 0.03,
         isActive: true
-      });
+      }));
 
       await job.save();
 
@@ -420,6 +445,15 @@ const jobController = {
 
     } catch (error) {
       logger.error('Create job error:', error);
+      if (isDuplicateKeyError(error)) {
+        return res.status(409).json({
+          success: false,
+          code: 'ONCHAIN_JOB_ID_COLLISION',
+          error: 'This on-chain job id already exists for the current JobRegistry in MongoDB.',
+          hint:
+            'JobRegistry may have been redeployed while old jobs remain in the database. Run scripts/migrate-job-registry-index.js or contact support.',
+        });
+      }
       res.status(500).json({ 
         success: false, 
         error: error.message 

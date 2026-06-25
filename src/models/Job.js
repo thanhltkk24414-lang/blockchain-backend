@@ -13,9 +13,21 @@ const JobSchema = new mongoose.Schema(
     onchainJobId: {
       type: Number,
       required: true,
-      unique: true,
       index: true,
       description: 'Job ID trên blockchain'
+    },
+
+    jobRegistryAddress: {
+      type: String,
+      lowercase: true,
+      index: true,
+      description: 'JobRegistry contract address when job was created (scopes onchainJobId per deployment)',
+    },
+
+    chainId: {
+      type: Number,
+      index: true,
+      description: 'Chain ID when job was registered on JobRegistry',
     },
     
     clientAddress: {
@@ -257,6 +269,7 @@ const JobSchema = new mongoose.Schema(
 // =============================================
 // 📊 INDEXES
 // =============================================
+JobSchema.index({ onchainJobId: 1, jobRegistryAddress: 1 }, { unique: true });
 JobSchema.index({ title: 'text', description: 'text' });
 JobSchema.index({ clientAddress: 1, status: 1 });
 JobSchema.index({ freelancerAddress: 1, status: 1 });
