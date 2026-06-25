@@ -285,7 +285,16 @@ JobSchema.virtual('freelancer', {
 
 JobSchema.virtual('isExpired').get(function () {
   if (this.status !== 'OPEN') return false;
-  return Date.now() > this.createdAt.getTime() + 30 * 24 * 60 * 60 * 1000;
+  const createdAt = this.createdAt;
+  if (!createdAt) return false;
+  const createdMs =
+    createdAt instanceof Date
+      ? createdAt.getTime()
+      : typeof createdAt === 'number'
+        ? createdAt
+        : new Date(createdAt).getTime();
+  if (!Number.isFinite(createdMs)) return false;
+  return Date.now() > createdMs + 30 * 24 * 60 * 60 * 1000;
 });
 
 // =============================================
