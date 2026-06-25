@@ -479,7 +479,8 @@ class ContractService {
       await this.init();
       
       const job = await this.getJob(jobId);
-      const disputeFee = Math.min(job.contractValue * 0.02, 50);
+      const DISPUTE_FEE_CAP = 50_000_000; // 50 USDC (6 decimals)
+      const disputeFee = Math.min(Math.floor((job.contractValue * 2) / 100), DISPUTE_FEE_CAP);
       
       const usdcContract = blockchain.getContract('MockUSDC');
       const signer = blockchain.getSigner();
