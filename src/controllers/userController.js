@@ -172,8 +172,16 @@ const userController = {
    */
   register: async (req, res) => {
     try {
-      const { walletAddress, username, email } = req.body;
+      const { walletAddress, username, email, role } = req.body;
       const normalizedWallet = walletAddress.toLowerCase();
+
+      if (!role || !['client', 'freelancer'].includes(role)) {
+        return res.status(400).json({
+          success: false,
+          code: 'ROLE_REQUIRED',
+          error: 'Choose Client or Freelancer when registering',
+        });
+      }
 
       const existingUser = await User.findOne({ walletAddress: normalizedWallet });
       if (existingUser) {
@@ -191,12 +199,13 @@ const userController = {
           }
 
           existingUser.username = username;
+          existingUser.role = role;
           if (email) existingUser.email = email;
           await existingUser.save();
 
           return res.status(200).json({
             success: true,
-            message: 'Username claimed successfully',
+            message: 'Registration completed successfully',
             user: existingUser.toJSON(),
           });
         }
@@ -222,6 +231,7 @@ const userController = {
         walletAddress: normalizedWallet,
         username,
         email,
+        role,
         reputation: {
           score: 100,
           tier: 'Normal',

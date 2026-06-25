@@ -3,6 +3,7 @@ const Job = require('../../models/Job');
 const blockchain = require('../../config/blockchain');
 const { notifyJobChange } = require('../notifications/notificationService');
 const logger = require('../../utils/logger');
+const { jobLookupFilter } = require('../../utils/jobScope');
 
 const ESCROW_EVENTS = ['EscrowDeposited', 'FundsReleased', 'DisputeRaised'];
 
@@ -60,7 +61,7 @@ class RealtimeListener {
     if (!status) return;
 
     try {
-      const job = await Job.findOne({ onchainJobId });
+      const job = await Job.findOne(jobLookupFilter(onchainJobId));
       if (!job) {
         logger.warn(`Realtime sync: job ${onchainJobId} not found in DB (${eventName})`);
         return;

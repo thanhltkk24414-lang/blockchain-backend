@@ -95,7 +95,10 @@ router.post(
     body('email')
       .optional()
       .isEmail()
-      .withMessage('Invalid email')
+      .withMessage('Invalid email'),
+    body('role')
+      .isIn(['client', 'freelancer'])
+      .withMessage('Role must be client or freelancer'),
   ],
   validate,
   userController.register
@@ -131,6 +134,7 @@ router.get(
         user: {
           walletAddress: user.walletAddress,
           username: user.username,
+          role: user.role,
           profile: user.profile,
           reputation: user.reputation,
           stats: user.stats
@@ -169,6 +173,7 @@ router.get(
         user: user ? {
           walletAddress: user.walletAddress,
           username: user.username,
+          role: user.role,
           reputation: user.reputation
         } : null
       });
