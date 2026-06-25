@@ -210,6 +210,96 @@ class ContractService {
     };
   }
 
+  decodeEscrowRevert(error) {
+    const data = error?.data || error?.info?.error?.data;
+    if (!data) {
+      return error?.shortMessage || error?.reason || error?.message || 'Unknown';
+    }
+    try {
+      const escrow = blockchain.getContract('EscrowVault');
+      const parsed = escrow.interface.parseError(data);
+      return parsed?.name || data;
+    } catch {
+      return data;
+    }
+  }
+
+  async simulateEscrowCall(functionName, jobId, fromAddress, extraArgs = []) {
+    await this.init();
+    const escrow = blockchain.getContract('EscrowVault');
+    const args = [jobId, ...extraArgs];
+    try {
+      await escrow[functionName].staticCall(...args, { from: fromAddress });
+      let estimatedGas = null;
+      try {
+        estimatedGas = Number(await escrow[functionName].estimateGas(...args, { from: fromAddress }));
+      } catch {
+        estimatedGas = null;
+      }
+      return { ok: true, revert: null, estimatedGas };
+    } catch (error) {
+      return { ok: false, revert: this.decodeEscrowRevert(error), estimatedGas: null };
+    }
+  }
+
+  /**
+   * Full on-chain snapshot + staticCall preflight for support (GET /api/jobs/:id/onchain-debug).
+   */
+  async getOnchainDebug(jobId, freelancerAddress) {
+    if (!this.isValidOnchainJobId(jobId)) {
+      return { error: `Invalid on-chain job id: ${jobId}` };
+    }
+
+    const job = await this.getJob(jobId);
+    const zero = '0x0000000000000000000000000000000000000000';
+    const freelancer = job.freelancer?.toLowerCase?.() === zero ? null : job.freelancer;
+    const now = Math.floor(Date.now() / 1000);
+    const assignedAt = job.assignedAt || 0;
+    const startWindowSeconds = 72 * 3600;
+    const elapsedSinceAssign = assignedAt > 0 ? now - assignedAt : null;
+
+    const simFrom =
+      freelancerAddress ||
+      (freelancer ? toChecksumAddress(freelancer) : null);
+
+    const sampleCid = 'QmOnchainDebugPreflight000000000000000000000';
+    const simulations = {};
+
+    if (simFrom) {
+      simulations.startWork = await this.simulateEscrowCall('startWork', jobId, simFrom);
+      simulations.submitWork = await this.simulateEscrowCall('submitWork', jobId, simFrom, [sampleCid]);
+    }
+
+    return {
+      jobId: Number(jobId),
+      contracts: {
+        jobRegistry: blockchain.getContractAddress('JobRegistry'),
+        escrowVault: blockchain.getContractAddress('EscrowVault'),
+      },
+      job: {
+        client: job.client ? toChecksumAddress(job.client) : null,
+        freelancer: freelancer ? toChecksumAddress(freelancer) : null,
+        status: this.mapOnchainStatus(job.status),
+        statusCode: job.status,
+        contractValue: job.contractValue,
+        deadline: job.deadline,
+        assignedAt,
+        assignedAtIso: assignedAt > 0 ? new Date(assignedAt * 1000).toISOString() : null,
+        submittedAt: job.submittedAt,
+        deliverableCID: job.deliverableCID || null,
+        metadataCID: job.metadataCID || null,
+      },
+      timing: {
+        now,
+        elapsedSinceAssignSeconds: elapsedSinceAssign,
+        startWindowSeconds,
+        startWindowExpired: elapsedSinceAssign != null && elapsedSinceAssign > startWindowSeconds,
+      },
+      simulations,
+      simulateFrom: simFrom,
+    };
+  }
+
   async submitProposal(jobId, bidAmount, proposalCID) {
     try {
       await this.init();

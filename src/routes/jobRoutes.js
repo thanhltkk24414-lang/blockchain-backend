@@ -53,6 +53,16 @@ router.get(
 );
 
 router.get(
+  '/:id/onchain-debug',
+  [
+    param('id').isMongoId().withMessage('Invalid job ID'),
+    query('freelancerAddress').optional().isEthereumAddress(),
+  ],
+  validate,
+  jobController.getOnchainDebug
+);
+
+router.get(
   '/:id',
   [param('id').isMongoId().withMessage('Invalid job ID')],
   validate,

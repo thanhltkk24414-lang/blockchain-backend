@@ -177,6 +177,48 @@ const jobController = {
   },
 
   /**
+   * GET /api/jobs/:id/onchain-debug
+   * Full chain state + staticCall preflight for support.
+   */
+  getOnchainDebug: async (req, res) => {
+    try {
+      const job = await Job.findById(req.params.id);
+      if (!job) {
+        return res.status(404).json({ success: false, error: 'Job not found' });
+      }
+
+      if (!contractService.isValidOnchainJobId(job.onchainJobId)) {
+        return res.status(400).json({
+          success: false,
+          error: 'Job has no valid on-chain id',
+        });
+      }
+
+      const freelancerAddress =
+        req.query.freelancerAddress ||
+        job.freelancerAddress ||
+        job.onchainFreelancerAddress ||
+        null;
+
+      const debug = await contractService.getOnchainDebug(
+        job.onchainJobId,
+        freelancerAddress ? normalizeAddress(freelancerAddress) : null,
+      );
+
+      res.json({
+        success: true,
+        mongoJobId: job._id.toString(),
+        mongoStatus: job.status,
+        onchainJobId: job.onchainJobId,
+        debug,
+      });
+    } catch (error) {
+      logger.error('Onchain debug error:', error);
+      res.status(500).json({ success: false, error: error.message });
+    }
+  },
+
+  /**
    * GET /api/jobs/:id
    * 📝 Lấy chi tiết job theo ID
    */
