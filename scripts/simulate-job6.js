@@ -8,7 +8,7 @@ const { ethers } = require('ethers');
 const RPC = process.env.SEPOLIA_RPC_URL || 'https://sepolia.infura.io/v3/2391dc7d6859472ab05d34a9890ba973';
 const JOB_ID = 6;
 const FREELANCER = '0xa7ac8154fa3019f5e95ba3720240c782c0e3ed70';
-const ESCROW = '0xf2143d1EA4D5a8716344c2cef862f9ed41244ED5';
+const ESCROW = '0xeE67C7bdC2679aa86b6eA4b7311a74B4c8bf6DD3';
 const REGISTRY = '0xeF5cc7a22D7Ff9e7FA0c5Fe714F088c98758A549';
 
 const STATUS = ['OPEN', 'ASSIGNED', 'IN_PROGRESS', 'SUBMITTED', '?4', 'COMPLETED', 'REFUNDED', 'CANCELLED'];
