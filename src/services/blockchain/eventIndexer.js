@@ -128,6 +128,8 @@ class EventIndexer {
       await delay(this.rpcDelayMs);
       await this.indexEscrowEvents(fromBlock, toBlock);
       await delay(this.rpcDelayMs);
+      await this.indexWorkEvents(fromBlock, toBlock);
+      await delay(this.rpcDelayMs);
       await this.indexDisputeEvents(fromBlock, toBlock);
 
       this.lastBlock = toBlock;
@@ -203,6 +205,21 @@ class EventIndexer {
 
         const status = this.mapStatus(Number(newStatus));
         job.status = status;
+
+        try {
+          const onChainJob = await contractService.getJob(jobNumber);
+          if (onChainJob.deliverableCID) {
+            job.deliverableCID = onChainJob.deliverableCID;
+          }
+          if (onChainJob.submittedAt > 0) {
+            job.submittedAt = onChainJob.submittedAt;
+          }
+          if (onChainJob.assignedAt > 0 && !job.assignedAt) {
+            job.assignedAt = onChainJob.assignedAt;
+          }
+        } catch (syncErr) {
+          logger.warn(`JobStatusUpdated: could not enrich job ${jobNumber}`, syncErr.message);
+        }
 
         if (status === 'ASSIGNED') {
           job.assignedAt = Math.floor(Date.now() / 1000);
@@ -350,6 +367,66 @@ class EventIndexer {
     } catch (error) {
       if (isRateLimitError(error)) throw error;
       logger.error('Index Escrow events error:', error);
+    }
+  }
+
+  async indexWorkEvents(fromBlock, toBlock) {
+    try {
+      const contract = blockchain.getContract('EscrowVault');
+
+      const startedFilter = contract.filters.WorkStarted();
+      const startedEvents = await this.queryFilterWithBackoff(
+        contract,
+        startedFilter,
+        fromBlock,
+        toBlock,
+      );
+      for (const event of startedEvents) {
+        const jobId = Number(event.args.jobId);
+        const job = await Job.findOne({ onchainJobId: jobId });
+        if (!job) continue;
+
+        await job.updateStatus('IN_PROGRESS', 'WorkStarted', event.log?.transactionHash || '');
+        job.lastSyncedBlock = toBlock;
+        await job.save();
+        logger.info(`WorkStarted synced for job ${jobId}`);
+        notifyJobChange(job, 'job:work_started', {
+          source: 'event_indexer',
+          transactionHash: event.log?.transactionHash || null,
+        });
+      }
+
+      await delay(this.rpcDelayMs);
+
+      const submittedFilter = contract.filters.WorkSubmitted();
+      const submittedEvents = await this.queryFilterWithBackoff(
+        contract,
+        submittedFilter,
+        fromBlock,
+        toBlock,
+      );
+      for (const event of submittedEvents) {
+        const jobId = Number(event.args.jobId);
+        const deliverableCID = event.args.deliverableCID;
+        const job = await Job.findOne({ onchainJobId: jobId });
+        if (!job) continue;
+
+        if (deliverableCID) {
+          job.deliverableCID = deliverableCID;
+        }
+        await job.updateStatus('SUBMITTED', 'WorkSubmitted', event.log?.transactionHash || '');
+        job.lastSyncedBlock = toBlock;
+        await job.save();
+        logger.info(`WorkSubmitted synced for job ${jobId}`);
+        notifyJobChange(job, 'job:work_submitted', {
+          source: 'event_indexer',
+          deliverableCID: deliverableCID || null,
+          transactionHash: event.log?.transactionHash || null,
+        });
+      }
+    } catch (error) {
+      if (isRateLimitError(error)) throw error;
+      logger.error('Index Work events error:', error);
     }
   }
 
