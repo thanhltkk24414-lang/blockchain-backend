@@ -5,6 +5,7 @@ const Bid = require('../models/Bid');
 const ipfsService = require('../config/ipfs');
 const contractService = require('../services/blockchain/contractService');
 const logger = require('../utils/logger');
+const { normalizeAddress, toChecksumAddress } = require('../utils/address');
 
 /**
  * 📝 Job Controller
@@ -203,10 +204,29 @@ const jobController = {
         logger.warn('Cannot fetch metadata from IPFS:', error.message);
       }
 
+      let onchain = null;
+      if (contractService.isValidOnchainJobId(job.onchainJobId)) {
+        try {
+          onchain = await contractService.getOnchainJobView(job.onchainJobId);
+        } catch (chainErr) {
+          logger.warn(`Cannot read on-chain job ${job.onchainJobId}:`, chainErr.message);
+        }
+      }
+
+      const jobJson = job.toObject();
+      if (onchain) {
+        jobJson.onchainStatus = onchain.onchainStatus;
+        jobJson.onchainFreelancerAddress = onchain.onchainFreelancerAddress;
+        if (onchain.onchainClientAddress) {
+          jobJson.onchainClientAddress = onchain.onchainClientAddress;
+        }
+      }
+
       res.json({
         success: true,
-        job,
-        metadata
+        job: jobJson,
+        metadata,
+        onchain,
       });
     } catch (error) {
       logger.error('Get job by id error:', error);
@@ -369,10 +389,10 @@ const jobController = {
 
       const result = await contractService.assignFreelancer(
         job.onchainJobId,
-        freelancerAddress.toLowerCase()
+        normalizeAddress(freelancerAddress)
       );
 
-      job.freelancerAddress = freelancerAddress.toLowerCase();
+      job.freelancerAddress = normalizeAddress(freelancerAddress);
       await job.save();
       await job.updateStatus(
         'ASSIGNED',

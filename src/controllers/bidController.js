@@ -5,6 +5,7 @@ const User = require('../models/User');
 const ipfsService = require('../config/ipfs');
 const contractService = require('../services/blockchain/contractService');
 const logger = require('../utils/logger');
+const { normalizeAddress, toChecksumAddress } = require('../utils/address');
 
 /**
  * 📝 Bid Controller
@@ -255,7 +256,8 @@ const bidController = {
 
       await bid.accept();
 
-      bid.job.freelancerAddress = bid.freelancerAddress;
+      const freelancerChecksum = toChecksumAddress(bid.freelancerAddress);
+      bid.job.freelancerAddress = normalizeAddress(bid.freelancerAddress);
       await bid.job.save();
 
       const onchainJobId = Number(
@@ -276,6 +278,7 @@ const bidController = {
         message: 'Bid accepted — client should fund escrow on-chain',
         bid,
         onchainJobId,
+        freelancerAddress: freelancerChecksum,
       });
 
     } catch (error) {

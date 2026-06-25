@@ -2,6 +2,17 @@
 const blockchain = require('../../config/blockchain');
 const logger = require('../../utils/logger');
 const { toUsdcUnits, computeTotalDepositUnits } = require('../../utils/usdc');
+const { toChecksumAddress } = require('../../utils/address');
+
+const ONCHAIN_STATUS_LABELS = {
+  0: 'OPEN',
+  1: 'ASSIGNED',
+  2: 'IN_PROGRESS',
+  3: 'SUBMITTED',
+  5: 'COMPLETED',
+  6: 'REFUNDED',
+  7: 'CANCELLED',
+};
 
 /**
  * 📝 Contract Service
@@ -153,6 +164,10 @@ class ContractService {
     }
   }
 
+  mapOnchainStatus(status) {
+    return ONCHAIN_STATUS_LABELS[Number(status)] ?? `UNKNOWN(${status})`;
+  }
+
   async getJob(jobId) {
     try {
       await this.init();
@@ -174,6 +189,25 @@ class ContractService {
       logger.error('Get job error:', error);
       throw error;
     }
+  }
+
+  /**
+   * Live JobRegistry read for API enrichment (freelancer + status for UI preflight).
+   */
+  async getOnchainJobView(jobId) {
+    if (!this.isValidOnchainJobId(jobId)) {
+      return null;
+    }
+    const job = await this.getJob(jobId);
+    const zero = '0x0000000000000000000000000000000000000000';
+    const freelancer = job.freelancer?.toLowerCase?.() === zero ? null : job.freelancer;
+    return {
+      onchainStatus: this.mapOnchainStatus(job.status),
+      onchainStatusCode: job.status,
+      onchainFreelancerAddress: freelancer ? toChecksumAddress(freelancer) : null,
+      onchainClientAddress: job.client ? toChecksumAddress(job.client) : null,
+      deliverableCID: job.deliverableCID || null,
+    };
   }
 
   async submitProposal(jobId, bidAmount, proposalCID) {

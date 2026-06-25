@@ -5,6 +5,7 @@ const Dispute = require('../../models/Dispute');
 const IndexerState = require('../../models/IndexerState');
 const blockchain = require('../../config/blockchain');
 const contractService = require('./contractService');
+const { toChecksumAddress, normalizeAddress } = require('../../utils/address');
 const { notifyJobChange, notifyDispute } = require('../notifications/notificationService');
 const logger = require('../../utils/logger');
 
@@ -241,6 +242,11 @@ class EventIndexer {
         if (!job) continue;
 
         job.freelancerAddress = freelancer.toLowerCase();
+        try {
+          job.onchainFreelancerAddress = toChecksumAddress(freelancer);
+        } catch {
+          job.onchainFreelancerAddress = freelancer;
+        }
         await this.ensureUser(freelancer);
         job.lastSyncedBlock = toBlock;
         await job.save();
@@ -273,6 +279,18 @@ class EventIndexer {
         const jobId = Number(event.args.jobId);
         const job = await Job.findOne({ onchainJobId: jobId });
         if (!job) continue;
+
+        try {
+          const onChainJob = await contractService.getJob(jobId);
+          const zero = '0x0000000000000000000000000000000000000000';
+          if (onChainJob.freelancer && onChainJob.freelancer.toLowerCase() !== zero) {
+            job.freelancerAddress = normalizeAddress(onChainJob.freelancer);
+            job.onchainFreelancerAddress = toChecksumAddress(onChainJob.freelancer);
+          }
+        } catch (syncErr) {
+          logger.warn(`EscrowDeposited: could not sync freelancer for job ${jobId}`, syncErr.message);
+        }
+
         await job.updateStatus('ASSIGNED', 'EscrowDeposited', event.log?.transactionHash || '');
         job.lastSyncedBlock = toBlock;
         await job.save();
