@@ -68,12 +68,23 @@ app.get('/health', (req, res) => {
   const mongoose = require('mongoose');
   const mongoStates = ['disconnected', 'connected', 'connecting', 'disconnecting'];
 
+  const contractEnv = {
+    MockUSDC: process.env.MOCK_USDC_ADDRESS || null,
+    ReputationStore: process.env.REPUTATION_STORE_ADDRESS || null,
+    PlatformTreasury: process.env.PLATFORM_TREASURY_ADDRESS || null,
+    JobRegistry: process.env.JOB_REGISTRY_ADDRESS || null,
+    ArbitratorPanel: process.env.ARBITRATOR_PANEL_ADDRESS || null,
+    EscrowVault: process.env.ESCROW_VAULT_ADDRESS || null,
+  };
+
   res.json({
     status: 'ok',
     timestamp: new Date().toISOString(),
     uptime: process.uptime(),
     environment: process.env.NODE_ENV || 'development',
     mongodb: mongoStates[mongoose.connection.readyState] || 'unknown',
+    chainId: Number(process.env.CHAIN_ID || 11155111),
+    contracts: contractEnv,
     websocket: {
       enabled: true,
       path: '/socket.io',
