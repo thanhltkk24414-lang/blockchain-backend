@@ -38,6 +38,11 @@ const JobSchema = new mongoose.Schema(
       index: true,
       description: 'Địa chỉ ví Freelancer'
     },
+
+    onchainFreelancerAddress: {
+      type: String,
+      description: 'Freelancer checksummed từ JobRegistry sau depositEscrow (EIP-55)'
+    },
     
     status: {
       type: String,
@@ -361,6 +366,9 @@ JobSchema.methods.getDeliverable = async function () {
 JobSchema.methods.syncFromChain = async function (jobData) {
   this.status = jobData.status;
   this.freelancerAddress = jobData.freelancer || this.freelancerAddress;
+  if (jobData.freelancerChecksum) {
+    this.onchainFreelancerAddress = jobData.freelancerChecksum;
+  }
   this.deadline = jobData.deadline || this.deadline;
   this.assignedAt = jobData.assignedAt || this.assignedAt;
   this.submittedAt = jobData.submittedAt || this.submittedAt;
