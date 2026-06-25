@@ -9,9 +9,21 @@ const ONCHAIN_STATUS_LABELS = {
   1: 'ASSIGNED',
   2: 'IN_PROGRESS',
   3: 'SUBMITTED',
+  4: 'DISPUTED',
   5: 'COMPLETED',
   6: 'REFUNDED',
   7: 'CANCELLED',
+};
+
+const STATUS_RANK = {
+  OPEN: 0,
+  ASSIGNED: 1,
+  IN_PROGRESS: 2,
+  SUBMITTED: 3,
+  DISPUTED: 3,
+  COMPLETED: 5,
+  REFUNDED: 6,
+  CANCELLED: 7,
 };
 
 /**
@@ -166,6 +178,14 @@ class ContractService {
 
   mapOnchainStatus(status) {
     return ONCHAIN_STATUS_LABELS[Number(status)] ?? `UNKNOWN(${status})`;
+  }
+
+  statusRank(status) {
+    return STATUS_RANK[status] ?? -1;
+  }
+
+  isChainStatusAhead(chainStatus, dbStatus) {
+    return this.statusRank(chainStatus) > this.statusRank(dbStatus);
   }
 
   async getJob(jobId) {

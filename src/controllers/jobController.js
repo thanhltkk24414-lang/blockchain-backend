@@ -255,6 +255,24 @@ const jobController = {
         }
       }
 
+      if (
+        onchain?.onchainStatus &&
+        contractService.isChainStatusAhead(onchain.onchainStatus, job.status)
+      ) {
+        try {
+          await job.updateStatus(onchain.onchainStatus, 'onchain_reconcile', '');
+          if (onchain.deliverableCID) {
+            job.deliverableCID = onchain.deliverableCID;
+          }
+          await job.save();
+          logger.info(
+            `Job ${job.onchainJobId} reconciled ${job.status} → ${onchain.onchainStatus} from chain read`,
+          );
+        } catch (reconcileErr) {
+          logger.warn(`On-chain reconcile failed for job ${job.onchainJobId}:`, reconcileErr.message);
+        }
+      }
+
       const jobJson = job.toObject();
       if (onchain) {
         jobJson.onchainStatus = onchain.onchainStatus;
@@ -262,6 +280,10 @@ const jobController = {
         if (onchain.onchainClientAddress) {
           jobJson.onchainClientAddress = onchain.onchainClientAddress;
         }
+        if (onchain.deliverableCID) {
+          jobJson.deliverableCID = onchain.deliverableCID;
+        }
+        jobJson.status = job.status;
       }
 
       res.json({
