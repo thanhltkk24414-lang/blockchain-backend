@@ -52,9 +52,40 @@ function mapJobForBrowseListing(job, requestedStatus) {
   return json;
 }
 
+/**
+ * Drop ASSIGNED+pending rows that are no longer OPEN on-chain (indexer lag on onchainFreelancerAddress).
+ */
+async function finalizeBrowseOpenListings(jobs, requestedStatus, contractService) {
+  const normalized = requestedStatus ? String(requestedStatus).toUpperCase() : '';
+  if (normalized !== 'OPEN') {
+    return jobs.map((job) => mapJobForBrowseListing(job, requestedStatus));
+  }
+
+  const listings = [];
+  for (const job of jobs) {
+    const json = mapJobForBrowseListing(job, requestedStatus);
+    if (
+      json.escrowPending &&
+      contractService?.isValidOnchainJobId?.(json.onchainJobId)
+    ) {
+      try {
+        const view = await contractService.getOnchainJobView(json.onchainJobId);
+        if (view.onchainStatus && view.onchainStatus !== 'OPEN') {
+          continue;
+        }
+      } catch {
+        // RPC read failed — keep listing rather than hide jobs.
+      }
+    }
+    listings.push(json);
+  }
+  return listings;
+}
+
 module.exports = {
   isPendingEscrowJob,
   buildPublicOpenJobsOrClause,
   applyBrowseStatusFilter,
   mapJobForBrowseListing,
+  finalizeBrowseOpenListings,
 };

@@ -13,7 +13,7 @@ const {
 } = require('../utils/jobReconcile');
 const {
   applyBrowseStatusFilter,
-  mapJobForBrowseListing,
+  finalizeBrowseOpenListings,
 } = require('../utils/browseJobs');
 
 /**
@@ -55,7 +55,7 @@ const jobController = {
         .limit(parseInt(limit))
         .populate('client', 'walletAddress username profile.fullName reputation');
 
-      const jobs = jobsRaw.map((job) => mapJobForBrowseListing(job, status));
+      const jobs = await finalizeBrowseOpenListings(jobsRaw, status, contractService);
 
       const total = await Job.countDocuments(query);
 
@@ -106,7 +106,7 @@ const jobController = {
         .limit(50)
         .populate('client', 'walletAddress username profile.fullName');
 
-      const jobs = jobsRaw.map((job) => mapJobForBrowseListing(job, 'OPEN'));
+      const jobs = await finalizeBrowseOpenListings(jobsRaw, 'OPEN', contractService);
 
       res.json({
         success: true,
