@@ -327,7 +327,10 @@ const jobController = {
         duration, 
         skills, 
         deliverables, 
-        acceptanceCriteria 
+        acceptanceCriteria,
+        onchainJobId,
+        metadataCID,
+        createTxHash,
       } = req.body;
       
       const clientAddress = req.user?.walletAddress;
@@ -348,7 +351,86 @@ const jobController = {
         });
       }
 
-      // 2. Upload metadata to IPFS
+      // 2. Client must register an on-chain job id (JobRegistry.createJob signed from their wallet)
+      if (onchainJobId == null || onchainJobId === '') {
+        return res.status(400).json({
+          success: false,
+          code: 'ONCHAIN_JOB_ID_REQUIRED',
+          error: 'onchainJobId is required',
+          hint:
+            'Call JobRegistry.createJob(metadataCID, value, duration) from your MetaMask wallet, then POST the returned job id with this metadata.',
+        });
+      }
+
+      if (!contractService.isValidOnchainJobId(onchainJobId)) {
+        return res.status(400).json({
+          success: false,
+          code: 'ONCHAIN_JOB_ID_INVALID',
+          error: `Invalid on-chain job id: ${onchainJobId}`,
+        });
+      }
+
+      let onChainJob;
+      try {
+        onChainJob = await contractService.getJob(onchainJobId);
+      } catch (chainReadError) {
+        logger.error('getJob failed during createJob register', chainReadError);
+        return res.status(503).json({
+          success: false,
+          code: 'ONCHAIN_JOB_READ_FAILED',
+          error: chainReadError.message || 'Could not read job from JobRegistry',
+          hint: 'Set RPC_URL on the backend and ensure the job exists on the deployed JobRegistry.',
+        });
+      }
+
+      const onchainClientAddress = onChainJob?.client?.toLowerCase?.() || null;
+      if (!onchainClientAddress) {
+        return res.status(404).json({
+          success: false,
+          code: 'ONCHAIN_JOB_NOT_FOUND',
+          error: `Job ${onchainJobId} not found on JobRegistry`,
+        });
+      }
+
+      if (onchainClientAddress !== clientAddress.toLowerCase()) {
+        return res.status(403).json({
+          success: false,
+          code: 'ONCHAIN_CLIENT_MISMATCH',
+          error: 'On-chain job client must match your signed-in wallet',
+          hint:
+            `JobRegistry lists client ${onChainJob.client}. Create jobs from the same wallet you used for SIWE sign-in.`,
+          onchainClientAddress: onChainJob.client,
+        });
+      }
+
+      const { toUsdcUnits } = require('../utils/usdc');
+      const expectedValueUnits = toUsdcUnits(contractValue);
+      if (Number(onChainJob.contractValue) !== expectedValueUnits) {
+        return res.status(400).json({
+          success: false,
+          code: 'ONCHAIN_VALUE_MISMATCH',
+          error: 'On-chain contractValue does not match the submitted budget',
+          hint: `Registry value is ${onChainJob.contractValue} smallest units; API sent ${expectedValueUnits}.`,
+        });
+      }
+
+      const chainMetadataCID = onChainJob.metadataCID || onChainJob.jobMetadataCID || null;
+      const resolvedMetadataCID = metadataCID || chainMetadataCID;
+      if (!resolvedMetadataCID) {
+        return res.status(400).json({
+          success: false,
+          code: 'METADATA_CID_REQUIRED',
+          error: 'metadataCID is required (upload to IPFS before createJob on-chain)',
+        });
+      }
+      if (chainMetadataCID && metadataCID && chainMetadataCID !== metadataCID) {
+        return res.status(400).json({
+          success: false,
+          code: 'METADATA_CID_MISMATCH',
+          error: 'metadataCID does not match JobRegistry.jobMetadataCID',
+        });
+      }
+
       const metadata = {
         title,
         description,
@@ -357,44 +439,15 @@ const jobController = {
         deliverables,
         acceptanceCriteria,
         clientAddress,
-        createdAt: new Date().toISOString()
+        createdAt: new Date().toISOString(),
       };
-      
-      const metadataResult = await ipfsService.uploadJSON(metadata);
 
-      // 3. Register job on JobRegistry (requires INDEXER_PRIVATE_KEY + RPC_URL + gas)
-      let jobId;
-      try {
-        jobId = await contractService.createJob(
-          clientAddress,
-          metadataResult.cid,
-          contractValue,
-          duration
-        );
-      } catch (contractError) {
-        logger.error('On-chain createJob failed — job not saved', contractError);
-        return res.status(503).json({
-          success: false,
-          error: contractError.message || 'On-chain job registration failed',
-          code: 'ONCHAIN_JOB_CREATE_FAILED',
-          hint:
-            'Set RPC_URL and INDEXER_PRIVATE_KEY on the backend to a Sepolia wallet funded with ETH for gas. ' +
-            'Without a successful createJob tx, jobs cannot receive on-chain bids or escrow.',
-        });
-      }
+      // Re-upload only when the client did not pass a CID already pinned on-chain.
+      const metadataResult = metadataCID
+        ? { cid: metadataCID }
+        : await ipfsService.uploadJSON(metadata);
 
-      if (!contractService.isValidOnchainJobId(jobId)) {
-        logger.error(`Refusing to save job with invalid onchainJobId: ${jobId}`);
-        return res.status(503).json({
-          success: false,
-          error: `Invalid on-chain job id: ${jobId}`,
-          code: 'ONCHAIN_JOB_ID_INVALID',
-        });
-      }
-
-      // 4. Save to database
-      const onChainJob = await contractService.getJob(jobId);
-      const onchainClientAddress = onChainJob?.client?.toLowerCase?.() || null;
+      const jobId = Number(onchainJobId);
       const deadline = Math.floor(Date.now() / 1000) + duration;
 
       const fields = buildCreateJobFields({
@@ -485,7 +538,8 @@ const jobController = {
 
   /**
    * POST /api/jobs/:id/assign-freelancer
-   * Relay JobRegistry.assignFreelancer via INDEXER wallet (on-chain client).
+   * Legacy relay — only works when INDEXER wallet is still the on-chain client (old jobs).
+   * New flow: depositEscrow from the client wallet assigns the freelancer on-chain.
    */
   assignFreelancer: async (req, res) => {
     try {
