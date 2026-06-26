@@ -10,6 +10,7 @@ const { notifyJobChange, notifyDispute } = require('../notifications/notificatio
 const logger = require('../../utils/logger');
 const { attachJobScope, jobLookupFilter } = require('../../utils/jobScope');
 const { findJobForCreate } = require('../../utils/jobReconcile');
+const { freelancerNetFromReleasedEvent } = require('../freelancerStatsService');
 
 const DEFAULT_BATCH_SIZE = 100;
 const DEFAULT_POLL_CRON = '0 */2 * * * *'; // every 2 minutes
@@ -347,6 +348,26 @@ class EventIndexer {
         job.lastSyncedBlock = toBlock;
         await job.save();
         logger.info(`FundsReleased synced for job ${jobId}`);
+
+        const freelancerWallet = (
+          event.args.freelancer ||
+          job.freelancerAddress ||
+          job.onchainFreelancerAddress ||
+          ''
+        ).toLowerCase();
+        if (freelancerWallet) {
+          const earned = freelancerNetFromReleasedEvent(event.args.amount);
+          await User.findOneAndUpdate(
+            { walletAddress: freelancerWallet },
+            {
+              $inc: {
+                'stats.jobsCompleted': 1,
+                'stats.totalEarned': earned,
+              },
+            },
+          );
+        }
+
         notifyJobChange(job, 'escrow:released', {
           source: 'event_indexer',
           transactionHash: event.log?.transactionHash || null,

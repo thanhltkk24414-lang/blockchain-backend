@@ -264,6 +264,11 @@ const bidController = {
 
       await bid.accept();
 
+      await Bid.updateMany(
+        { jobId: bid.jobId, _id: { $ne: bid._id }, status: 'pending' },
+        { $set: { status: 'rejected' } },
+      );
+
       const freelancerChecksum = toChecksumAddress(bid.freelancerAddress);
       bid.job.freelancerAddress = normalizeAddress(bid.freelancerAddress);
       // Keep job OPEN until depositEscrow on-chain — ASSIGNED prematurely hides jobs from /browse.
