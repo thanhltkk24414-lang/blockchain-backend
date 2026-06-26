@@ -9,6 +9,7 @@ const { toChecksumAddress, normalizeAddress } = require('../../utils/address');
 const { notifyJobChange, notifyDispute } = require('../notifications/notificationService');
 const logger = require('../../utils/logger');
 const { attachJobScope, jobLookupFilter } = require('../../utils/jobScope');
+const { findJobForCreate } = require('../../utils/jobReconcile');
 
 const DEFAULT_BATCH_SIZE = 100;
 const DEFAULT_POLL_CRON = '0 */2 * * * *'; // every 2 minutes
@@ -159,15 +160,17 @@ class EventIndexer {
         const { jobId, client, contractValue } = event.args;
         const jobNumber = Number(jobId);
 
-        const existing = await Job.findOne(jobLookupFilter(jobNumber));
+        const existing = await findJobForCreate(jobNumber);
         if (existing) continue;
 
         const jobData = await contractService.getJob(jobNumber);
+        const chainClient = client.toLowerCase();
         await this.ensureUser(client);
 
         const job = new Job(attachJobScope({
           onchainJobId: jobNumber,
-          clientAddress: client.toLowerCase(),
+          clientAddress: chainClient,
+          onchainClientAddress: chainClient,
           contractValue: Number(contractValue),
           status: this.mapStatus(jobData.status),
           deadline: jobData.deadline,
@@ -178,7 +181,15 @@ class EventIndexer {
           isSynced: true,
         }));
 
-        await job.save();
+        try {
+          await job.save();
+        } catch (saveErr) {
+          if (saveErr?.code === 11000 || saveErr?.code === 11001) {
+            logger.info(`Job ${jobNumber} already in DB (create race) — skipping indexer insert`);
+            continue;
+          }
+          throw saveErr;
+        }
         logger.info(`Job ${jobNumber} synced from chain`);
         notifyJobChange(job, 'job:created', {
           source: 'event_indexer',
