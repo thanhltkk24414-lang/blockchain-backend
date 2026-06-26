@@ -331,6 +331,7 @@ const jobController = {
         onchainJobId,
         metadataCID,
         createTxHash,
+        relayCreateJob,
       } = req.body;
       
       const clientAddress = req.user?.walletAddress;
@@ -348,6 +349,126 @@ const jobController = {
         return res.status(403).json({ 
           success: false, 
           error: 'Restricted users cannot create jobs' 
+        });
+      }
+
+      const relayEnabled = process.env.RELAY_CREATE_JOB === 'true';
+      const relayRequested = relayCreateJob === true;
+
+      if (relayRequested && !relayEnabled) {
+        return res.status(400).json({
+          success: false,
+          code: 'RELAY_CREATE_JOB_DISABLED',
+          error: 'Relayed createJob is disabled on this API',
+          hint:
+            'Set RELAY_CREATE_JOB=true on the backend (and INDEXER_PRIVATE_KEY), or sign createJob from MetaMask.',
+        });
+      }
+
+      // Demo fallback: INDEXER wallet relays JobRegistry.createJob (on-chain client ≠ API client).
+      if (relayRequested && relayEnabled && (onchainJobId == null || onchainJobId === '')) {
+        if (!metadataCID) {
+          return res.status(400).json({
+            success: false,
+            code: 'METADATA_CID_REQUIRED',
+            error: 'metadataCID is required (upload to IPFS before relayed createJob)',
+          });
+        }
+
+        let relayJobId;
+        try {
+          relayJobId = await contractService.createJob(
+            clientAddress,
+            metadataCID,
+            contractValue,
+            duration,
+          );
+        } catch (contractError) {
+          logger.error('Relay createJob failed', contractError);
+          return res.status(503).json({
+            success: false,
+            error: contractError.message || 'On-chain job registration failed',
+            code: 'ONCHAIN_JOB_CREATE_FAILED',
+            hint:
+              'Set RPC_URL and INDEXER_PRIVATE_KEY on the backend. Escrow/deposit later requires the INDEXER wallet as on-chain client.',
+          });
+        }
+
+        if (!contractService.isValidOnchainJobId(relayJobId)) {
+          return res.status(503).json({
+            success: false,
+            code: 'ONCHAIN_JOB_ID_INVALID',
+            error: `Invalid on-chain job id: ${relayJobId}`,
+          });
+        }
+
+        const onChainJob = await contractService.getJob(relayJobId);
+        const onchainClientAddress = onChainJob?.client?.toLowerCase?.() || null;
+        const deadline = Math.floor(Date.now() / 1000) + duration;
+        const metadataResult = { cid: metadataCID };
+
+        const fields = buildCreateJobFields({
+          jobId: relayJobId,
+          clientAddress,
+          onchainClientAddress,
+          metadataResult,
+          title,
+          description,
+          category,
+          skills,
+          contractValue,
+          duration,
+          deadline,
+          onChainJob,
+        });
+
+        const reconcile = await reconcileJobAfterOnchainCreate(
+          relayJobId,
+          clientAddress,
+          fields,
+          onchainClientAddress,
+        );
+
+        if (reconcile.action === 'collision' || reconcile.action === 'duplicate') {
+          if (reconcile.job?.clientAddress === clientAddress) {
+            return res.status(200).json({
+              success: true,
+              message: 'Job already registered (relay)',
+              jobId: relayJobId,
+              onchainJobId: relayJobId,
+              onchainClientAddress: onChainJob?.client,
+              metadataCID,
+              relayed: true,
+              job: reconcile.job,
+            });
+          }
+          return res.status(409).json({
+            success: false,
+            code: 'ONCHAIN_JOB_ID_COLLISION',
+            error: `On-chain job id ${relayJobId} already used in MongoDB.`,
+          });
+        }
+
+        if (reconcile.action === 'created') {
+          user.stats.jobsPosted += 1;
+          await user.save();
+        }
+
+        return res.status(reconcile.action === 'reconciled' ? 200 : 201).json({
+          success: true,
+          message:
+            reconcile.action === 'reconciled'
+              ? 'Job linked (relay / recovered)'
+              : 'Job created via INDEXER relay (demo mode)',
+          jobId: relayJobId,
+          onchainJobId: relayJobId,
+          onchainClientAddress: onChainJob?.client,
+          metadataCID,
+          relayed: true,
+          demoMode: true,
+          hint:
+            'On-chain client is the INDEXER wallet — escrow deposit must use that wallet, not the API SIWE wallet.',
+          job: reconcile.job,
         });
       }
 
