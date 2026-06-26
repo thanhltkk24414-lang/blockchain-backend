@@ -139,9 +139,17 @@ const bidController = {
         });
       }
       if (job.status !== 'OPEN') {
-        return res.status(400).json({ 
-          success: false, 
-          error: 'Job is not open for bids' 
+        return res.status(400).json({
+          success: false,
+          error: 'Job is not open for bids',
+        });
+      }
+
+      const acceptedBid = await Bid.findOne({ jobId, status: 'accepted' });
+      if (acceptedBid) {
+        return res.status(400).json({
+          success: false,
+          error: 'Job already has an accepted proposal awaiting escrow deposit',
         });
       }
 
@@ -258,6 +266,12 @@ const bidController = {
 
       const freelancerChecksum = toChecksumAddress(bid.freelancerAddress);
       bid.job.freelancerAddress = normalizeAddress(bid.freelancerAddress);
+      // Keep job OPEN until depositEscrow on-chain — ASSIGNED prematurely hides jobs from /browse.
+      bid.job.statusHistory = bid.job.statusHistory || [];
+      bid.job.statusHistory.push({
+        status: bid.job.status,
+        note: `Freelancer ${bid.freelancerAddress} accepted (pending on-chain escrow deposit)`,
+      });
       await bid.job.save();
 
       const onchainJobId = Number(
@@ -266,12 +280,6 @@ const bidController = {
 
       // On-chain assign + escrow happen together in client depositEscrow() while job is OPEN.
       // Do NOT call assignFreelancer here — it moves job to ASSIGNED and blocks depositEscrow.
-
-      await bid.job.updateStatus(
-        'ASSIGNED',
-        `Freelancer ${bid.freelancerAddress} accepted (pending on-chain escrow deposit)`,
-        ''
-      );
 
       res.json({
         success: true,
