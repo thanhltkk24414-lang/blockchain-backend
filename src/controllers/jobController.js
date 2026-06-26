@@ -6,7 +6,11 @@ const ipfsService = require('../config/ipfs');
 const contractService = require('../services/blockchain/contractService');
 const logger = require('../utils/logger');
 const { normalizeAddress, toChecksumAddress } = require('../utils/address');
-const { attachJobScope, jobLookupFilter, isDuplicateKeyError } = require('../utils/jobScope');
+const { isDuplicateKeyError } = require('../utils/jobScope');
+const {
+  buildCreateJobFields,
+  reconcileJobAfterOnchainCreate,
+} = require('../utils/jobReconcile');
 
 /**
  * 📝 Job Controller
@@ -386,18 +390,38 @@ const jobController = {
       const onchainClientAddress = onChainJob?.client?.toLowerCase?.() || null;
       const deadline = Math.floor(Date.now() / 1000) + duration;
 
-      const scopedLookup = jobLookupFilter(jobId);
-      const existingJob = await Job.findOne(scopedLookup);
-      if (existingJob) {
-        if (existingJob.clientAddress === clientAddress) {
+      const fields = buildCreateJobFields({
+        jobId,
+        clientAddress,
+        onchainClientAddress,
+        metadataResult,
+        title,
+        description,
+        category,
+        skills,
+        contractValue,
+        duration,
+        deadline,
+        onChainJob,
+      });
+
+      const reconcile = await reconcileJobAfterOnchainCreate(
+        jobId,
+        clientAddress,
+        fields,
+        onchainClientAddress,
+      );
+
+      if (reconcile.action === 'collision' || reconcile.action === 'duplicate') {
+        if (reconcile.job?.clientAddress === clientAddress) {
           return res.status(200).json({
             success: true,
             message: 'Job already registered for this wallet',
             jobId,
             onchainJobId: jobId,
             onchainClientAddress,
-            metadataCID: existingJob.metadataCID,
-            job: existingJob,
+            metadataCID: reconcile.job.metadataCID,
+            job: reconcile.job,
           });
         }
         return res.status(409).json({
@@ -409,38 +433,28 @@ const jobController = {
         });
       }
 
-      const job = new Job(attachJobScope({
-        onchainJobId: jobId,
-        clientAddress,
-        onchainClientAddress,
-        metadataCID: metadataResult.cid,
-        title,
-        description,
-        category,
-        skills,
-        contractValue,
-        duration,
-        deadline,
-        status: 'OPEN',
-        totalDeposit: contractValue * 1.03,
-        platformFee: contractValue * 0.03,
-        isActive: true
-      }));
+      const job = reconcile.job;
+      const createdFresh = reconcile.action === 'created';
 
-      await job.save();
+      // 5. Update user stats (only when this API call newly registered the job)
+      if (createdFresh) {
+        user.stats.jobsPosted += 1;
+        await user.save();
+      }
 
-      // 5. Update user stats
-      user.stats.jobsPosted += 1;
-      await user.save();
-
-      res.status(201).json({
+      const statusCode = reconcile.action === 'reconciled' ? 200 : 201;
+      res.status(statusCode).json({
         success: true,
-        message: 'Job created successfully',
+        message:
+          reconcile.action === 'reconciled'
+            ? 'Job linked to your account (recovered from indexer or prior attempt)'
+            : 'Job created successfully',
         jobId: jobId,
         onchainJobId: jobId,
         onchainClientAddress,
         metadataCID: metadataResult.cid,
-        job
+        reconciled: reconcile.action === 'reconciled',
+        job,
       });
 
     } catch (error) {
@@ -451,7 +465,8 @@ const jobController = {
           code: 'ONCHAIN_JOB_ID_COLLISION',
           error: 'This on-chain job id already exists for the current JobRegistry in MongoDB.',
           hint:
-            'JobRegistry may have been redeployed while old jobs remain in the database. Run scripts/migrate-job-registry-index.js or contact support.',
+            'A concurrent indexer write may have won the race. Retry createJob — the server should reconcile automatically. ' +
+            'If this persists, run scripts/migrate-job-registry-index.js or contact support.',
         });
       }
       res.status(500).json({ 
