@@ -11,6 +11,10 @@ const {
   buildCreateJobFields,
   reconcileJobAfterOnchainCreate,
 } = require('../utils/jobReconcile');
+const {
+  applyBrowseStatusFilter,
+  finalizeBrowseOpenListings,
+} = require('../utils/browseJobs');
 
 /**
  * 📝 Job Controller
@@ -34,24 +38,24 @@ const jobController = {
       } = req.query;
 
       const skip = (page - 1) * limit;
-      const query = { isActive: true };
-
-      // Filter
-      if (status) query.status = status;
-      if (category) query.category = category;
+      const extra = {};
+      if (category) extra.category = category;
       if (search) {
-        query.$text = { $search: search };
+        extra.$text = { $search: search };
       }
+      const query = applyBrowseStatusFilter(extra, status);
 
       // Sort
       const sort = {};
       sort[sortBy] = parseInt(order);
 
-      const jobs = await Job.find(query)
+      const jobsRaw = await Job.find(query)
         .sort(sort)
         .skip(skip)
         .limit(parseInt(limit))
         .populate('client', 'walletAddress username profile.fullName reputation');
+
+      const jobs = await finalizeBrowseOpenListings(jobsRaw, status, contractService);
 
       const total = await Job.countDocuments(query);
 
@@ -82,24 +86,27 @@ const jobController = {
     try {
       const { q, category, minBudget, maxBudget } = req.query;
       
-      const query = { isActive: true, status: 'OPEN' };
-      
+      const extra = {};
       if (q) {
-        query.$text = { $search: q };
+        extra.$text = { $search: q };
       }
-      if (category) query.category = category;
-      if (minBudget) query.contractValue = { $gte: parseInt(minBudget) };
+      if (category) extra.category = category;
+      if (minBudget) extra.contractValue = { $gte: parseInt(minBudget) };
       if (maxBudget) {
-        query.contractValue = { 
-          ...query.contractValue, 
-          $lte: parseInt(maxBudget) 
+        extra.contractValue = {
+          ...extra.contractValue,
+          $lte: parseInt(maxBudget),
         };
       }
 
-      const jobs = await Job.find(query)
+      const query = applyBrowseStatusFilter(extra, 'OPEN');
+
+      const jobsRaw = await Job.find(query)
         .sort(q ? { score: { $meta: 'textScore' } } : { createdAt: -1 })
         .limit(50)
         .populate('client', 'walletAddress username profile.fullName');
+
+      const jobs = await finalizeBrowseOpenListings(jobsRaw, 'OPEN', contractService);
 
       res.json({
         success: true,
