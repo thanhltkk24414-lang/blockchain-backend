@@ -101,6 +101,10 @@ class ContractService {
     return `${context}: ${detail}`;
   }
 
+  /**
+   * Legacy relay helper — only works when INDEXER wallet is the on-chain client (pre-migration jobs).
+   * New jobs: client signs createJob from their wallet; use depositEscrow on the frontend instead.
+   */
   async createJob(clientAddress, metadataCID, contractValue, duration) {
     await this.init();
 
