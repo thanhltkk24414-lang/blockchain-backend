@@ -14,7 +14,8 @@
     "test:socket": "node scripts/test-socket-notifications.js",
     "test:socket:integration": "node scripts/test-socket-notifications.js --integration",
     "test:api": "node scripts/test-api-smoke.js",
-    "test:job-reconcile": "node scripts/test-job-reconcile.js"
+    "test:job-reconcile": "node scripts/test-job-reconcile.js",
+    "test:browse-jobs": "node scripts/test-browse-jobs.js"
   },
   "repository": {
     "type": "git",

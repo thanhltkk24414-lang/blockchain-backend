@@ -2,9 +2,9 @@
 const Dispute = require('../models/Dispute');
 const Job = require('../models/Job');
 const User = require('../models/User');
-const ipfsService = require('../config/ipfs');
 const contractService = require('../services/blockchain/contractService');
 const logger = require('../utils/logger');
+const { hydrateEvidenceContent } = require('../utils/evidenceHydrate');
 
 /**
  * 📝 Dispute Controller
@@ -348,7 +348,9 @@ const disputeController = {
         });
       }
 
-      const evidencesWithContent = await hydrateEvidenceContent(dispute.evidence);
+      const evidencesWithContent = await hydrateEvidenceContent(dispute.evidence, {
+        onchainJobId: dispute.onchainJobId,
+      });
 
       res.json({
         success: true,
@@ -378,7 +380,9 @@ const disputeController = {
         });
       }
 
-      const evidencesWithContent = await hydrateEvidenceContent(dispute.evidence);
+      const evidencesWithContent = await hydrateEvidenceContent(dispute.evidence, {
+        onchainJobId: dispute.onchainJobId,
+      });
 
       res.json({
         success: true,
@@ -394,28 +398,5 @@ const disputeController = {
     }
   }
 };
-
-async function hydrateEvidenceContent(evidenceList) {
-  return Promise.all(
-    (evidenceList || []).map(async (evidence) => {
-      let content = null;
-      if (evidence.ipfsHash) {
-        try {
-          content = await ipfsService.getJSON(evidence.ipfsHash);
-        } catch {
-          try {
-            content = await ipfsService.getFile(evidence.ipfsHash);
-          } catch {
-            /* not JSON or file */
-          }
-        }
-      }
-      return {
-        ...evidence.toObject(),
-        content,
-      };
-    }),
-  );
-}
 
 module.exports = disputeController;

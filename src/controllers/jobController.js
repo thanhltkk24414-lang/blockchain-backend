@@ -99,7 +99,7 @@ const jobController = {
         };
       }
 
-      const requestedStatus = status ? String(status).toUpperCase() : 'OPEN';
+      const requestedStatus = status ? String(status).toUpperCase() : null;
       const query = applyBrowseStatusFilter(extra, requestedStatus);
 
       const jobsRaw = await Job.find(query)

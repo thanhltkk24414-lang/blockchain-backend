@@ -502,7 +502,11 @@ class EventIndexer {
         await dispute.save();
         job.disputeId = dispute._id;
         job.isDisputed = true;
-        await job.save();
+        if (job.status !== 'DISPUTED') {
+          await job.updateStatus('DISPUTED', 'DisputeSetup', event.log?.transactionHash || '');
+        } else {
+          await job.save();
+        }
 
         logger.info(`Dispute created for job ${jobNumber}`);
         notifyDispute(dispute, job, 'dispute:opened', {

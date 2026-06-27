@@ -23,10 +23,11 @@ router.get(
 router.get(
   '/search',
   [
-    query('q').notEmpty().isString(),
+    query('q').optional().isString(),
     query('category').optional().isString(),
     query('minBudget').optional().isNumeric(),
     query('maxBudget').optional().isNumeric(),
+    query('status').optional().isString(),
   ],
   validate,
   jobController.searchJobs
