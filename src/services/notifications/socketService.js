@@ -2,6 +2,7 @@ const { Server } = require('socket.io');
 const User = require('../../models/User');
 const { verifyToken } = require('../../middleware/auth');
 const logger = require('../../utils/logger');
+const { getAllowedOriginCallback, getAllowedOriginPatterns } = require('../../utils/corsOrigins');
 
 /**
  * Socket.io server for client UI notifications (Contributor 2 — Task 4).
@@ -13,8 +14,7 @@ class SocketService {
   }
 
   getAllowedOrigins() {
-    return process.env.ALLOWED_ORIGINS?.split(',').map((o) => o.trim()).filter(Boolean)
-      || ['http://localhost:3000', 'http://localhost:3001'];
+    return getAllowedOriginPatterns();
   }
 
   initialize(httpServer) {
@@ -22,7 +22,7 @@ class SocketService {
 
     this.io = new Server(httpServer, {
       cors: {
-        origin: this.getAllowedOrigins(),
+        origin: getAllowedOriginCallback(),
         credentials: true,
       },
       path: '/socket.io',
