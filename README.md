@@ -1,6 +1,17 @@
 ﻿# Fapex Backend
 
-Node.js API cho Fapex — Web3 Freelance Platform. MongoDB cache, Pinata IPFS, dong bo su kien Sepolia.
+Node.js API cho Fapex — Web3 Freelance Platform. MongoDB **cache**, chain events là nguồn sự thật cho escrow/dispute. Pinata IPFS.
+
+## Kiến trúc (BE-1)
+
+- **On-chain:** JobRegistry, EscrowVault, ArbitratorPanel, ReputationStore
+- **Indexer:** `eventIndexer.js` — poll `eth_getLogs`, persist `IndexerState.lastBlock` (BE-4 replay sau restart)
+- **Realtime:** `realtimeListener.js` khi có `SEPOLIA_WSS_URL`
+- **v2:** The Graph subgraph (documented, chưa triển khai)
+
+## Config API (FE-5)
+
+`GET /api/config` — chainId, contract addresses, indexer/auth/ipfs notes.
 
 ## Chay local
 
