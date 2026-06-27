@@ -84,7 +84,7 @@ const jobController = {
    */
   searchJobs: async (req, res) => {
     try {
-      const { q, category, minBudget, maxBudget } = req.query;
+      const { q, category, minBudget, maxBudget, status } = req.query;
       
       const extra = {};
       if (q) {
@@ -99,14 +99,15 @@ const jobController = {
         };
       }
 
-      const query = applyBrowseStatusFilter(extra, 'OPEN');
+      const requestedStatus = status ? String(status).toUpperCase() : 'OPEN';
+      const query = applyBrowseStatusFilter(extra, requestedStatus);
 
       const jobsRaw = await Job.find(query)
         .sort(q ? { score: { $meta: 'textScore' } } : { createdAt: -1 })
         .limit(50)
-        .populate('client', 'walletAddress username profile.fullName');
+        .populate('client', 'walletAddress username profile.fullName reputation');
 
-      const jobs = await finalizeBrowseOpenListings(jobsRaw, 'OPEN', contractService);
+      const jobs = await finalizeBrowseOpenListings(jobsRaw, requestedStatus, contractService);
 
       res.json({
         success: true,

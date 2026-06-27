@@ -17,10 +17,10 @@ router.get(
 );
 
 router.get(
-  '/job/:jobId',
-  [param('jobId').isMongoId().withMessage('Invalid job ID')],
+  '/onchain/:onchainJobId/evidences',
+  [param('onchainJobId').isInt({ min: 1 })],
   validate,
-  disputeController.getDisputeByJob,
+  disputeController.getEvidencesByOnchainJob,
 );
 
 router.get(
@@ -28,6 +28,13 @@ router.get(
   [param('onchainJobId').isInt({ min: 1 })],
   validate,
   disputeController.getDisputeByOnchainJob,
+);
+
+router.get(
+  '/job/:jobId',
+  [param('jobId').isMongoId().withMessage('Invalid job ID')],
+  validate,
+  disputeController.getDisputeByJob,
 );
 
 router.get(
@@ -66,12 +73,26 @@ router.post(
 );
 
 router.post(
+  '/onchain/:onchainJobId/evidence',
+  authenticate,
+  [
+    param('onchainJobId').isInt({ min: 1 }),
+    body('ipfsHash').notEmpty().isString(),
+    body('description').optional().isString(),
+    body('onChainHash').optional().isString(),
+  ],
+  validate,
+  disputeController.addEvidenceByOnchainJob,
+);
+
+router.post(
   '/:id/evidence',
   authenticate,
   [
     param('id').isMongoId(),
     body('ipfsHash').notEmpty().isString(),
     body('description').optional().isString(),
+    body('onChainHash').optional().isString(),
   ],
   validate,
   disputeController.addEvidence,

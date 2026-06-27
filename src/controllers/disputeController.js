@@ -238,7 +238,7 @@ const disputeController = {
   addEvidence: async (req, res) => {
     try {
       const { id } = req.params;
-      const { ipfsHash, description } = req.body;
+      const { ipfsHash, description, onChainHash } = req.body;
       const submitterAddress = req.user?.walletAddress?.toLowerCase();
 
       if (!submitterAddress) {
@@ -265,8 +265,7 @@ const disputeController = {
         });
       }
 
-      // Add evidence
-      await dispute.addEvidence(submitterAddress, ipfsHash, description);
+      await dispute.addEvidence(submitterAddress, ipfsHash, description, onChainHash);
 
       res.json({
         success: true,
@@ -279,6 +278,58 @@ const disputeController = {
       res.status(500).json({ 
         success: false, 
         error: error.message 
+      });
+    }
+  },
+
+  /**
+   * POST /api/disputes/onchain/:onchainJobId/evidence
+   * Nộp bằng chứng theo on-chain job id (fallback khi chưa có disputeId ở FE)
+   */
+  addEvidenceByOnchainJob: async (req, res) => {
+    try {
+      const onchainJobId = Number(req.params.onchainJobId);
+      const { ipfsHash, description, onChainHash } = req.body;
+      const submitterAddress = req.user?.walletAddress?.toLowerCase();
+
+      if (!submitterAddress) {
+        return res.status(401).json({
+          success: false,
+          error: 'Authentication required',
+        });
+      }
+
+      const dispute = await Dispute.findOne({ onchainJobId }).populate('jobId');
+      if (!dispute) {
+        return res.status(404).json({
+          success: false,
+          error: 'No dispute found for this on-chain job',
+        });
+      }
+
+      if (
+        dispute.initiatorAddress !== submitterAddress &&
+        dispute.respondentAddress !== submitterAddress
+      ) {
+        return res.status(403).json({
+          success: false,
+          error: 'Only parties to the dispute can submit evidence',
+        });
+      }
+
+      await dispute.addEvidence(submitterAddress, ipfsHash, description, onChainHash);
+
+      res.json({
+        success: true,
+        message: 'Evidence submitted successfully',
+        disputeId: dispute._id,
+        evidence: dispute.evidence[dispute.evidence.length - 1],
+      });
+    } catch (error) {
+      logger.error('Add evidence by onchain job error:', error);
+      res.status(500).json({
+        success: false,
+        error: error.message,
       });
     }
   },
@@ -297,26 +348,7 @@ const disputeController = {
         });
       }
 
-      // Fetch evidence content from IPFS
-      const evidencesWithContent = await Promise.all(
-        dispute.evidence.map(async (evidence) => {
-          let content = null;
-          try {
-            content = await ipfsService.getJSON(evidence.ipfsHash);
-          } catch (error) {
-            // If not JSON, try as file
-            try {
-              content = await ipfsService.getFile(evidence.ipfsHash);
-            } catch (e) {
-              // Ignore
-            }
-          }
-          return {
-            ...evidence.toObject(),
-            content
-          };
-        })
-      );
+      const evidencesWithContent = await hydrateEvidenceContent(dispute.evidence);
 
       res.json({
         success: true,
@@ -329,7 +361,61 @@ const disputeController = {
         error: error.message 
       });
     }
+  },
+
+  /**
+   * GET /api/disputes/onchain/:onchainJobId/evidences
+   * Public — lấy bằng chứng theo on-chain job id
+   */
+  getEvidencesByOnchainJob: async (req, res) => {
+    try {
+      const onchainJobId = Number(req.params.onchainJobId);
+      const dispute = await Dispute.findOne({ onchainJobId });
+      if (!dispute) {
+        return res.status(404).json({
+          success: false,
+          error: 'No dispute found for this on-chain job',
+        });
+      }
+
+      const evidencesWithContent = await hydrateEvidenceContent(dispute.evidence);
+
+      res.json({
+        success: true,
+        disputeId: dispute._id,
+        evidence: evidencesWithContent,
+      });
+    } catch (error) {
+      logger.error('Get evidences by onchain job error:', error);
+      res.status(500).json({
+        success: false,
+        error: error.message,
+      });
+    }
   }
 };
+
+async function hydrateEvidenceContent(evidenceList) {
+  return Promise.all(
+    (evidenceList || []).map(async (evidence) => {
+      let content = null;
+      if (evidence.ipfsHash) {
+        try {
+          content = await ipfsService.getJSON(evidence.ipfsHash);
+        } catch {
+          try {
+            content = await ipfsService.getFile(evidence.ipfsHash);
+          } catch {
+            /* not JSON or file */
+          }
+        }
+      }
+      return {
+        ...evidence.toObject(),
+        content,
+      };
+    }),
+  );
+}
 
 module.exports = disputeController;
