@@ -6,6 +6,7 @@ const cors = require('cors');
 const helmet = require('helmet');
 const morgan = require('morgan');
 const { errorHandler } = require('./middleware/errorHandler');
+const { getAllowedOriginCallback } = require('./utils/corsOrigins');
 
 // Import routes
 const authRoutes = require('./routes/authRoutes');
@@ -35,9 +36,9 @@ app.use(helmet({
   },
 }));
 
-// CORS - Cho phép frontend truy cập
+// CORS — ALLOWED_ORIGINS: comma-separated exact URLs and/or wildcards (*.vercel.app)
 app.use(cors({
-  origin: process.env.ALLOWED_ORIGINS?.split(',') || ['http://localhost:3000', 'http://localhost:3001'],
+  origin: getAllowedOriginCallback(),
   credentials: true,
 }));
 
