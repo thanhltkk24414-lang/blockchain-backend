@@ -513,6 +513,58 @@ class EventIndexer {
 
       await delay(this.rpcDelayMs);
 
+      const evidenceFilter = contract.filters.EvidenceSubmitted();
+      const evidenceEvents = await this.queryFilterWithBackoff(
+        contract,
+        evidenceFilter,
+        fromBlock,
+        toBlock,
+      );
+
+      for (const event of evidenceEvents) {
+        const { jobId, submitter, ipfsHash } = event.args;
+        const jobNumber = Number(jobId);
+        const submitterLower = submitter.toLowerCase();
+        const hashLower = String(ipfsHash).toLowerCase();
+
+        let dispute = await Dispute.findOne({ onchainJobId: jobNumber });
+        if (!dispute) {
+          const job = await Job.findOne(jobLookupFilter(jobNumber));
+          if (!job) continue;
+          dispute = new Dispute({
+            jobId: job._id,
+            onchainJobId: jobNumber,
+            initiatorAddress: job.clientAddress,
+            respondentAddress: job.freelancerAddress,
+            status: 'OPEN',
+            openedAt: new Date(),
+          });
+        }
+
+        const existing = dispute.evidence.find(
+          (entry) =>
+            (entry.onChainHash && entry.onChainHash === hashLower) ||
+            (entry.submitter === submitterLower &&
+              entry.ipfsHash &&
+              !entry.onChainHash),
+        );
+
+        if (existing) {
+          if (!existing.onChainHash) existing.onChainHash = hashLower;
+        } else {
+          dispute.evidence.push({
+            submitter: submitterLower,
+            onChainHash: hashLower,
+            submittedAt: new Date(),
+          });
+        }
+
+        await dispute.save();
+        logger.info(`EvidenceSubmitted synced for job ${jobNumber} (${hashLower.slice(0, 10)}…)`);
+      }
+
+      await delay(this.rpcDelayMs);
+
       const finalFilter = contract.filters.DisputeFinalized();
       const finalEvents = await this.queryFilterWithBackoff(
         contract,

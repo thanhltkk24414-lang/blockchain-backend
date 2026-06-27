@@ -32,13 +32,18 @@ function applyBrowseStatusFilter(baseQuery = {}, status) {
   if (!status) return query;
 
   const normalized = String(status).toUpperCase();
-  if (normalized !== 'OPEN') {
-    query.status = normalized;
+  if (normalized === 'OPEN') {
+    delete query.status;
+    query.$or = buildPublicOpenJobsOrClause();
     return query;
   }
 
-  delete query.status;
-  query.$or = buildPublicOpenJobsOrClause();
+  if (normalized === 'DISPUTED') {
+    query.$or = [{ status: 'DISPUTED' }, { isDisputed: true }];
+    return query;
+  }
+
+  query.status = normalized;
   return query;
 }
 

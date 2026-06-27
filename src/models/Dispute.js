@@ -23,6 +23,7 @@ const DisputeSchema = new mongoose.Schema({
   evidence: [{
     submitter: { type: String, lowercase: true },
     ipfsHash: String,
+    onChainHash: { type: String, lowercase: true },
     description: String,
     submittedAt: { type: Date, default: Date.now },
   }],
@@ -46,10 +47,45 @@ const DisputeSchema = new mongoose.Schema({
   createdAt: { type: Date, default: Date.now },
 });
 
-DisputeSchema.methods.addEvidence = function addEvidence(submitter, ipfsHash, description) {
+DisputeSchema.methods.addEvidence = function addEvidence(
+  submitter,
+  ipfsHash,
+  description,
+  onChainHash,
+) {
+  const normalizedSubmitter = submitter.toLowerCase();
+  const normalizedOnChainHash = onChainHash ? String(onChainHash).toLowerCase() : null;
+
+  if (normalizedOnChainHash) {
+    const byHash = this.evidence.find(
+      (entry) => entry.onChainHash && entry.onChainHash === normalizedOnChainHash,
+    );
+    if (byHash) {
+      if (ipfsHash && !byHash.ipfsHash) byHash.ipfsHash = ipfsHash;
+      if (description && !byHash.description) byHash.description = description;
+      return this.save();
+    }
+  }
+
+  if (ipfsHash) {
+    const byCid = this.evidence.find(
+      (entry) =>
+        entry.submitter === normalizedSubmitter &&
+        entry.ipfsHash === ipfsHash,
+    );
+    if (byCid) {
+      if (normalizedOnChainHash && !byCid.onChainHash) {
+        byCid.onChainHash = normalizedOnChainHash;
+      }
+      if (description && !byCid.description) byCid.description = description;
+      return this.save();
+    }
+  }
+
   this.evidence.push({
-    submitter: submitter.toLowerCase(),
-    ipfsHash,
+    submitter: normalizedSubmitter,
+    ipfsHash: ipfsHash || undefined,
+    onChainHash: normalizedOnChainHash || undefined,
     description,
     submittedAt: new Date(),
   });
