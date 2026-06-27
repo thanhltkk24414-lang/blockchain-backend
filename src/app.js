@@ -93,6 +93,36 @@ app.get('/health', (req, res) => {
   });
 });
 
+// Platform config for frontend (addresses, chain, indexer) — FE-5
+app.get('/api/config', (req, res) => {
+  res.json({
+    success: true,
+    chainId: Number(process.env.CHAIN_ID || 11155111),
+    contracts: {
+      MockUSDC: process.env.MOCK_USDC_ADDRESS || null,
+      ReputationStore: process.env.REPUTATION_STORE_ADDRESS || null,
+      PlatformTreasury: process.env.PLATFORM_TREASURY_ADDRESS || null,
+      JobRegistry: process.env.JOB_REGISTRY_ADDRESS || null,
+      ArbitratorPanel: process.env.ARBITRATOR_PANEL_ADDRESS || null,
+      EscrowVault: process.env.ESCROW_VAULT_ADDRESS || null,
+    },
+    indexer: {
+      enabled: !['false', '0', 'no', 'off'].includes(
+        String(process.env.ENABLE_EVENT_INDEXER ?? 'true').toLowerCase(),
+      ),
+      note: 'MongoDB is a cache; chain events are source of truth. The Graph planned for v2.',
+    },
+    auth: {
+      type: 'SIWE',
+      domain: process.env.SIWE_DOMAIN || null,
+    },
+    ipfs: {
+      provider: 'pinata',
+      note: 'Deliverables uploaded via API; CID committed on-chain via submitWork / metadataCID.',
+    },
+  });
+});
+
 // API Routes
 app.use('/api/auth', authRoutes);
 app.use('/api/users', userRoutes);
