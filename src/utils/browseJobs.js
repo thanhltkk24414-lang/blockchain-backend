@@ -27,22 +27,36 @@ function buildPublicOpenJobsOrClause() {
   ];
 }
 
+/** Terminal statuses set isActive=false in Job.updateStatus — browse must still list them. */
+const TERMINAL_BROWSE_STATUSES = new Set(['COMPLETED', 'REFUNDED', 'CANCELLED']);
+
 function applyBrowseStatusFilter(baseQuery = {}, status) {
-  const query = { isActive: true, ...baseQuery };
-  if (!status) return query;
+  const query = { ...baseQuery };
+  if (!status) {
+    query.isActive = true;
+    return query;
+  }
 
   const normalized = String(status).toUpperCase();
   if (normalized === 'OPEN') {
+    query.isActive = true;
     delete query.status;
     query.$or = buildPublicOpenJobsOrClause();
     return query;
   }
 
   if (normalized === 'DISPUTED') {
+    query.isActive = true;
     query.$or = [{ status: 'DISPUTED' }, { isDisputed: true }];
     return query;
   }
 
+  if (TERMINAL_BROWSE_STATUSES.has(normalized)) {
+    query.status = normalized;
+    return query;
+  }
+
+  query.isActive = true;
   query.status = normalized;
   return query;
 }

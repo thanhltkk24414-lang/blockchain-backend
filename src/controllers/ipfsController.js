@@ -10,7 +10,7 @@ const ipfsController = {
   uploadFile: async (req, res) => {
     try {
       if (!req.file) {
-        return res.status(400).json({ success: false, error: 'Vui lòng đính kèm một file' });
+        return res.status(400).json({ success: false, error: 'Please attach a file' });
       }
 
       const buffer = req.file.buffer || fs.readFileSync(req.file.path);
@@ -29,7 +29,7 @@ const ipfsController = {
       });
     } catch (error) {
       logger.error('IPFS file upload error:', error);
-      res.status(500).json({ success: false, error: 'Không thể upload file lên hệ thống IPFS' });
+      res.status(500).json({ success: false, error: 'Failed to upload file to IPFS' });
     }
   },
 
@@ -41,11 +41,22 @@ const ipfsController = {
     try {
       const metadata = req.body;
       if (!metadata || Object.keys(metadata).length === 0) {
-        return res.status(400).json({ success: false, error: 'Vui lòng cung cấp dữ liệu JSON' });
+        return res.status(400).json({ success: false, error: 'Please provide JSON metadata' });
+      }
+
+      const pinataMetadata = {
+        name: `Job_Metadata_${Date.now()}.json`,
+      };
+      const keyvalues = {};
+      if (metadata.type) keyvalues.type = String(metadata.type);
+      if (metadata.onchainJobId != null) keyvalues.onchainJobId = String(metadata.onchainJobId);
+      if (metadata.jobId) keyvalues.jobId = String(metadata.jobId);
+      if (Object.keys(keyvalues).length > 0) {
+        pinataMetadata.keyvalues = keyvalues;
       }
 
       const result = await ipfsService.uploadJSON(metadata, {
-        name: `Job_Metadata_${Date.now()}.json`,
+        metadata: pinataMetadata,
       });
 
       res.status(200).json({
@@ -56,7 +67,7 @@ const ipfsController = {
       });
     } catch (error) {
       logger.error('IPFS metadata upload error:', error);
-      res.status(500).json({ success: false, error: 'Không thể upload metadata lên hệ thống IPFS' });
+      res.status(500).json({ success: false, error: 'Failed to upload metadata to IPFS' });
     }
   },
 };

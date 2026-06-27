@@ -103,8 +103,10 @@ class IPFSService {
       const body = {
         pinataContent: data,
       };
-      if (options.name) {
-        body.pinataMetadata = { name: options.name };
+      const metadata = { ...(options.metadata || {}) };
+      if (options.name) metadata.name = options.name;
+      if (Object.keys(metadata).length > 0) {
+        body.pinataMetadata = metadata;
       }
 
       const response = await axios.post(
@@ -169,6 +171,38 @@ class IPFSService {
       return true;
     } catch (error) {
       return false;
+    }
+  }
+
+  /**
+   * List pinned CIDs by Pinata metadata keyvalue (for dispute evidence backfill).
+   */
+  async listPinsByMetadata(key, value, limit = 50) {
+    const headers = this._getPinataAuthHeaders();
+    if (!headers) return [];
+
+    try {
+      const response = await axios.get(`${PINATA_API_URL}/data/pinList`, {
+        headers,
+        params: {
+          status: 'pinned',
+          pageLimit: limit,
+          metadata: {
+            keyvalues: {
+              [key]: { value: String(value), op: 'eq' },
+            },
+          },
+        },
+      });
+
+      const rows = response.data?.rows || [];
+      return rows.map((row) => ({
+        cid: row.ipfs_pin_hash,
+        metadata: row.metadata,
+      }));
+    } catch (error) {
+      logger.warn(`Pinata pinList failed (${key}=${value}): ${this._formatError(error)}`);
+      return [];
     }
   }
 }

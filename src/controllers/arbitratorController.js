@@ -23,14 +23,14 @@ const arbitratorController = {
         minStake: MIN_STAKE_USDC,
         isValid,
         message: isValid
-          ? 'Đủ điều kiện tham gia phân xử'
-          : 'Số dư cọc không đủ hạn mức tối thiểu',
+          ? 'Eligible to participate in arbitration'
+          : 'Stake balance below the minimum threshold',
       });
     } catch (error) {
       logger.error('Arbitrator stake check error:', error);
       res.status(500).json({
         success: false,
-        error: 'Lỗi hệ thống khi kết nối dữ liệu Blockchain.',
+        error: 'System error while fetching blockchain data.',
       });
     }
   },

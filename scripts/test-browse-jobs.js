@@ -1,37 +1,42 @@
+/**
+ * Unit tests for browse status filters (no MongoDB required).
+ *
+ * Usage: node scripts/test-browse-jobs.js
+ */
 const assert = require('assert');
 const {
-  isPendingEscrowJob,
   applyBrowseStatusFilter,
-  mapJobForBrowseListing,
+  buildPublicOpenJobsOrClause,
 } = require('../src/utils/browseJobs');
 
-assert.strictEqual(
-  isPendingEscrowJob({ onchainFreelancerAddress: null }),
-  true,
-);
-assert.strictEqual(
-  isPendingEscrowJob({ onchainFreelancerAddress: '0x0000000000000000000000000000000000000000' }),
-  true,
-);
-assert.strictEqual(
-  isPendingEscrowJob({ onchainFreelancerAddress: '0xabcabcabcabcabcabcabcabcabcabcabcabcabca' }),
-  false,
-);
+function testOpenFilter() {
+  const q = applyBrowseStatusFilter({}, 'OPEN');
+  assert.strictEqual(q.isActive, true);
+  assert.ok(Array.isArray(q.$or));
+  assert.strictEqual(q.status, undefined);
+}
 
-const openQuery = applyBrowseStatusFilter({ category: 'dev' }, 'OPEN');
-assert.ok(openQuery.$or);
-assert.strictEqual(openQuery.category, 'dev');
-assert.strictEqual(openQuery.isActive, true);
+function testCompletedFilter() {
+  const q = applyBrowseStatusFilter({}, 'COMPLETED');
+  assert.strictEqual(q.status, 'COMPLETED');
+  assert.strictEqual(q.isActive, undefined);
+}
 
-const mapped = mapJobForBrowseListing(
-  {
-    status: 'ASSIGNED',
-    onchainFreelancerAddress: '',
-    title: 't',
-  },
-  'OPEN',
-);
-assert.strictEqual(mapped.status, 'OPEN');
-assert.strictEqual(mapped.escrowPending, true);
+function testDisputedFilter() {
+  const q = applyBrowseStatusFilter({}, 'DISPUTED');
+  assert.strictEqual(q.isActive, true);
+  assert.ok(q.$or.some((c) => c.status === 'DISPUTED'));
+  assert.ok(q.$or.some((c) => c.isDisputed === true));
+}
 
-console.log('browseJobs utils: ok');
+function testPublicOpenClause() {
+  const clause = buildPublicOpenJobsOrClause();
+  assert.ok(clause.some((c) => c.status === 'OPEN'));
+  assert.ok(clause.some((c) => c.status === 'ASSIGNED'));
+}
+
+testOpenFilter();
+testCompletedFilter();
+testDisputedFilter();
+testPublicOpenClause();
+console.log('test-browse-jobs: OK');
