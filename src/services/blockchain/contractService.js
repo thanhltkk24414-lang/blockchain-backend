@@ -701,6 +701,72 @@ class ContractService {
       throw error;
     }
   }
+
+  async getOnchainDispute(jobId) {
+    try {
+      await this.init();
+      const contract = blockchain.getContract('ArbitratorPanel');
+      const raw = await contract.disputes(jobId);
+      const createdAt = Number(raw.createdAt ?? raw[1] ?? 0);
+      if (createdAt <= 0) {
+        return { createdAt: 0, isResolved: false, round: 0, revealCount: 0, pendingResult: 0 };
+      }
+      return {
+        initiator: (raw.initiator ?? raw[0] ?? '').toLowerCase(),
+        createdAt,
+        isResolved: Boolean(raw.isResolved ?? raw[3]),
+        round: Number(raw.round ?? raw[4] ?? 1),
+        pendingResult: Number(raw.pendingResult ?? raw[5] ?? 0),
+        resultAt: Number(raw.resultAt ?? raw[6] ?? 0),
+        commitCount: Number(raw.commitCount ?? raw[7] ?? 0),
+        revealCount: Number(raw.revealCount ?? raw[8] ?? 0),
+      };
+    } catch (error) {
+      logger.error('Get on-chain dispute error:', error);
+      return { createdAt: 0, isResolved: false, round: 0, revealCount: 0, pendingResult: 0 };
+    }
+  }
+
+  async getOnChainEvidences(jobId) {
+    try {
+      await this.init();
+      const contract = blockchain.getContract('ArbitratorPanel');
+      const rows = await contract.getEvidences(jobId);
+      return (rows || []).map((ev) => ({
+        submitter: String(ev.submitter ?? ev[0]).toLowerCase(),
+        submittedAt: Number(ev.submittedAt ?? ev[1] ?? 0),
+        ipfsHash: String(ev.ipfsHash ?? ev[2]).toLowerCase(),
+      }));
+    } catch (error) {
+      logger.error('Get on-chain evidences error:', error);
+      return [];
+    }
+  }
+
+  async assessQuorumFailed(jobId, nowSec = Math.floor(Date.now() / 1000)) {
+    const { DISPUTE_QUORUM, revealEndSec } = require('../../utils/disputeTimings');
+    const onchainJob = await this.getJob(jobId);
+    if (!onchainJob || onchainJob.status !== 4) {
+      return null;
+    }
+
+    const dispute = await this.getOnchainDispute(jobId);
+    if (!dispute?.createdAt) return null;
+
+    const revealEnded = nowSec > revealEndSec(dispute.createdAt);
+    if (!revealEnded) return null;
+    if (dispute.revealCount >= DISPUTE_QUORUM) return null;
+    if (dispute.isResolved && dispute.pendingResult > 0) return null;
+
+    return {
+      onchainJobId: Number(jobId),
+      revealCount: dispute.revealCount,
+      commitCount: dispute.commitCount,
+      quorum: DISPUTE_QUORUM,
+      createdAt: dispute.createdAt,
+      isResolved: dispute.isResolved,
+    };
+  }
 }
 
 module.exports = new ContractService();

@@ -1,6 +1,10 @@
 const mongoose = require('mongoose');
 const Job = require('../models/Job');
 const IndexerState = require('../models/IndexerState');
+const contractService = require('../services/blockchain/contractService');
+const { hydrateEvidenceContent } = require('../utils/evidenceHydrate');
+const { ensureDisputeForOnchainJob } = require('../utils/disputeUpsert');
+const { applyCurrentRegistryScope } = require('../utils/jobScope');
 
 function contractEnvFromProcess() {
   return {
@@ -70,4 +74,55 @@ async function getStats(req, res) {
   return res.json(payload);
 }
 
-module.exports = { getStats };
+/**
+ * GET /api/admin/quorum-failed-jobs — disputed jobs with <3 reveals after reveal window.
+ * Public read; force-resolve remains on-chain wallet-gated.
+ */
+async function getQuorumFailedJobs(req, res) {
+  if (mongoose.connection.readyState !== 1) {
+    return res.json({ success: true, jobs: [] });
+  }
+
+  try {
+    const disputedJobs = await Job.find(
+      applyCurrentRegistryScope({ status: 'DISPUTED', onchainJobId: { $exists: true, $ne: null } }),
+    )
+      .select('_id title onchainJobId clientAddress freelancerAddress deliverableCID status')
+      .lean();
+
+    const jobs = [];
+
+    for (const job of disputedJobs) {
+      const assessment = await contractService.assessQuorumFailed(job.onchainJobId);
+      if (!assessment) continue;
+
+      let evidence = [];
+      try {
+        const dispute = await ensureDisputeForOnchainJob(job.onchainJobId, { requireDisputed: true });
+        if (dispute?.evidence?.length) {
+          evidence = await hydrateEvidenceContent(dispute.evidence, {
+            onchainJobId: job.onchainJobId,
+          });
+        }
+      } catch (err) {
+        /* evidence hydration optional */
+      }
+
+      jobs.push({
+        ...assessment,
+        mongoJobId: job._id,
+        title: job.title,
+        clientAddress: job.clientAddress,
+        freelancerAddress: job.freelancerAddress,
+        deliverableCID: job.deliverableCID || null,
+        evidence,
+      });
+    }
+
+    return res.json({ success: true, jobs });
+  } catch (err) {
+    return res.status(500).json({ success: false, error: err.message, jobs: [] });
+  }
+}
+
+module.exports = { getStats, getQuorumFailedJobs };
