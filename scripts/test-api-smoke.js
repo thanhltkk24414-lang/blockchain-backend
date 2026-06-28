@@ -65,6 +65,15 @@ async function main() {
   }
   console.log('✓ GET /health', health.body);
 
+  const adminStats = await request('GET', '/api/admin/stats');
+  if (adminStats.status !== 200 || !adminStats.body.success) {
+    throw new Error(`Admin stats failed: ${adminStats.status} ${JSON.stringify(adminStats.body)}`);
+  }
+  console.log('✓ GET /api/admin/stats', {
+    totalJobs: adminStats.body.jobs?.total,
+    lastBlock: adminStats.body.indexer?.lastBlock,
+  });
+
   if (withNonce) {
     const nonce = await request('POST', '/api/auth/nonce', { walletAddress: testWallet });
     if (nonce.status !== 200 || !nonce.body.success) {
