@@ -1,94 +1,119 @@
-﻿# Fapex Backend
+﻿# FAPEX — Backend
 
-Node.js API cho Fapex — Web3 Freelance Platform. MongoDB **cache**, chain events là nguồn sự thật cho escrow/dispute. Pinata IPFS.
+> Node.js API, SIWE auth, MongoDB cache, Sepolia event indexer, Pinata IPFS, Socket.io.
 
-## Kiến trúc (BE-1)
+Submodule của monorepo [`Blockchain`](../README.md).
 
-- **On-chain:** JobRegistry, EscrowVault, ArbitratorPanel, ReputationStore
-- **Indexer:** `eventIndexer.js` — poll `eth_getLogs`, persist `IndexerState.lastBlock` (BE-4 replay sau restart)
-- **Realtime:** `realtimeListener.js` khi có `SEPOLIA_WSS_URL`
-- **v2:** The Graph subgraph (documented, chưa triển khai)
+**Production:** https://fapex-backend-production.up.railway.app
 
-## Config API (FE-5)
+**Cập nhật:** 2026-06-28
 
-`GET /api/config` — chainId, contract addresses, indexer/auth/ipfs notes.
+---
 
-## Chay local
+## Features
 
-cp .env.example .env
+| Module | Mô tả |
+|--------|--------|
+| **Auth** | SIWE (EIP-4361) → JWT 7 ngày |
+| **REST API** | users, jobs, bids, disputes, IPFS upload |
+| **Indexer** | `eth_getLogs` poll → MongoDB + Socket.io |
+| **Realtime** | Optional WSS listener (`SEPOLIA_WSS_URL`) |
+| **IPFS** | Pinata pin file/metadata |
+| **CORS** | Wildcard `https://*.vercel.app` |
+
+---
+
+## Quick start
+
+```bash
+cd backend
 npm install
-npm run dev
+cp .env.example .env
+# Điền MONGODB_URI, RPC_URL, JWT_SECRET, contract addresses, PINATA_JWT
 
-Entry point: src/server.js
-
-## API Contributor 1 (da tich hop)
-
-- POST /api/ipfs/upload/metadata - Upload metadata job, tra metadataCID
-- POST /api/ipfs/upload/file - Upload deliverable / evidence
-- GET /api/arbitrator/:address/status - Kiem tra coc trong tai (>= 50 USDC)
-
-Phan cong chi tiet: docs/guides/task-split.md trong monorepo.
-
-## SIWE auth (verify flow)
-
-1. Set `backend/.env`: `SIWE_DOMAIN=localhost`, `APP_URL=http://localhost:3000`, `CHAIN_ID=11155111`, `MONGODB_URI`, `JWT_SECRET`.
-2. Start backend: `npm start` (use `http://127.0.0.1:5000` on Windows, not `localhost`, to avoid IPv6 hangs).
-3. Open `http://127.0.0.1:5000/siwe-sign.html` → **Kết nối MetaMask** (Sepolia).
-4. **Lấy nonce từ API** — fills nonce, domain, URI, chainId, and EIP-55 `walletAddress`.
-5. **Ký với MetaMask** → **Copy JSON cho Postman**.
-6. `POST /api/auth/verify` with that JSON body (message + signature). Do not edit the message after signing.
-7. Copy `token` from response → `Authorization: Bearer <token>` for `GET /api/auth/me`.
-
-**Common failures:** lowercase address in message (must be EIP-55, e.g. `0x523eBd853a1638065f148A05c0Ca423E490D92f7`); typo `16338865` vs correct `1638065`; signature from an old message after re-fetching nonce; `domain` must be `SIWE_DOMAIN` only (not full `APP_URL`); re-sign if you change nonce/domain/URI/chainId/address.
-
-Run `npm run test:siwe` (unit) and `npm run test:siwe:integration` (needs `npm start` + MongoDB).
-
-## WebSocket notifications (Socket.io)
-
-Realtime job/escrow updates for the frontend UI. Requires JWT from SIWE login.
-
-**Connect (browser or Node client):**
-
-```javascript
-import { io } from 'socket.io-client';
-
-const socket = io('http://127.0.0.1:5000', {
-  path: '/socket.io',
-  auth: { token: '<JWT from POST /api/auth/verify>' },
-  transports: ['websocket', 'polling'],
-});
-
-socket.on('connected', (data) => console.log('authenticated', data.walletAddress));
-socket.on('job:updated', (payload) => console.log('job update', payload));
-socket.emit('subscribe:job', onchainJobId); // optional: job-specific room
+npm run dev          # http://127.0.0.1:5000
+npm run docker:mongo # MongoDB local (Docker)
 ```
 
-**Server → client events**
+---
 
-| Event | When |
-|-------|------|
-| `connected` | After JWT auth succeeds |
-| `job:updated` | Any job/escrow status change (umbrella) |
-| `job:created` | `JobCreated` indexed |
-| `job:status_updated` | `JobStatusUpdated` indexed |
-| `job:freelancer_assigned` | `FreelancerAssigned` indexed |
-| `escrow:deposited` | `EscrowDeposited` |
-| `escrow:released` | `FundsReleased` |
-| `escrow:dispute_raised` | `DisputeRaised` |
-| `dispute:updated` | Dispute opened/finalized (umbrella) |
-| `dispute:opened` | `DisputeSetup` indexed |
-| `dispute:finalized` | `DisputeFinalized` indexed |
+## Environment variables
 
-**Client → server events:** `subscribe:job`, `unsubscribe:job` (pass `onchainJobId`).
+Xem đầy đủ: [`.env.example`](.env.example)
 
-Notifications are emitted when the event indexer or realtime EscrowVault listener (`SEPOLIA_WSS_URL`) syncs chain events to MongoDB.
+| Variable | Mô tả |
+|----------|--------|
+| `PORT` | Default 5000 |
+| `MONGODB_URI` | MongoDB connection |
+| `RPC_URL` | Sepolia JSON-RPC |
+| `JWT_SECRET` | Auth signing |
+| `SIWE_DOMAIN` | Domain trong SIWE message (no protocol) |
+| `APP_URL` | Full app URL (SIWE URI) |
+| `ALLOWED_ORIGINS` | CORS + Socket.io (`https://*.vercel.app`) |
+| `ENABLE_EVENT_INDEXER` | `false` để tắt indexer local |
+| `INDEXER_PRIVATE_KEY` | Wallet cho on-chain txs (createJob, cron) |
+| `JOB_REGISTRY_ADDRESS` | `0x302629f82d51b0972ffc3A99cbE355F4acEf908d` |
+| `LEGACY_JOB_REGISTRY_ADDRESS` | `0xE5425cFE21BAe73d54138Bb290B671bF4c55FBC9` |
+| `PINATA_JWT` | IPFS pinning |
 
-Run `npm run test:socket` (unit) and `npm run test:socket:integration` (needs `npm start` + MongoDB + `JWT_SECRET`).
+Contract addresses sync với [`../deployments/sepolia.json`](../deployments/sepolia.json).
 
-## Deploy (Railway / Render)
+---
 
-Production uses `Dockerfile`, `railway.toml`, and `render.yaml` in this repo. Set env vars from `.env.example` in the platform dashboard (never commit `.env`).
+## API endpoints
 
-Full steps: [docs/guides/deploy-backend.md](https://github.com/thanhltkk24414-lang/Blockchain-docs/blob/main/guides/deploy-backend.md) in the docs repo.
+| Method | Path | Mô tả |
+|--------|------|--------|
+| GET | `/health` | Health check |
+| GET | `/api/config` | Contract addresses cho FE |
+| POST | `/api/auth/nonce` | SIWE step 1 |
+| POST | `/api/auth/verify` | SIWE → JWT |
+| GET | `/api/auth/me` | Current user |
+| POST | `/api/ipfs/upload/*` | Pinata upload |
+| CRUD | `/api/jobs`, `/api/bids`, `/api/disputes` | Job marketplace |
 
-Quick verify after deploy: `GET /health` on your public URL.
+Chi tiết: [docs/guides/auth-api.md](../docs/guides/auth-api.md)
+
+---
+
+## Indexer
+
+- File: `src/services/blockchain/eventIndexer.js`
+- Checkpoint: `IndexerState.lastBlock`
+- Events: `JobCreated`, `EscrowDeposited`, `WorkSubmitted`, `DisputeRaised`, …
+- **Chain = source of truth** — MongoDB là cache
+
+Sau redeploy JobRegistry:
+
+```bash
+node scripts/migrate-job-registry-index.js
+```
+
+---
+
+## Socket.io
+
+- Path: `/socket.io`
+- Auth: JWT trong handshake
+- Rooms: `wallet:{address}`, `job:{onchainJobId}`
+
+---
+
+## Deploy (Railway)
+
+Chi tiết: [docs/guides/deploy-backend.md](../docs/guides/deploy-backend.md)
+
+```
+ALLOWED_ORIGINS=http://localhost:3000,https://*.vercel.app
+SIWE_DOMAIN=your-app.vercel.app
+APP_URL=https://your-app.vercel.app
+```
+
+---
+
+## Docs
+
+- [Manual (VI)](../docs/guides/manual-vi.md)
+- [Deploy backend](../docs/guides/deploy-backend.md)
+- [Postman walkthrough](../docs/guides/postman-walkthrough-vi.md)
+- [On-chain / off-chain map](../docs/guides/on-chain-off-chain-map-vi.md)
