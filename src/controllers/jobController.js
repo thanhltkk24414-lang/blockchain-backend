@@ -14,6 +14,7 @@ const {
   normalizeAddr,
   canAdoptJobForClient,
   findJobForCreate,
+  findConflictingJobForCreate,
 } = require('../utils/jobReconcile');
 const {
   applyBrowseStatusFilter,
@@ -32,12 +33,13 @@ function resolveChainMetadata(onChainJob, requestMetadataCID) {
 async function adoptOrInsertJobAfterRace(reconcile, fields, jobId, clientAddress, onchainClientAddress) {
   const ownsOnChain = normalizeAddr(onchainClientAddress) === normalizeAddr(clientAddress);
 
-  if (reconcile.job && ownsOnChain) {
-    return adoptOrMergeJob(reconcile.job, fields);
-  }
   if (reconcile.job) {
-    return reconcile.job;
+    if (canAdoptJobForClient(reconcile.job, clientAddress, onchainClientAddress)) {
+      return adoptOrMergeJob(reconcile.job, fields);
+    }
+    return ownsOnChain ? null : reconcile.job;
   }
+
   if (!ownsOnChain) {
     return null;
   }
@@ -50,11 +52,11 @@ async function adoptOrInsertJobAfterRace(reconcile, fields, jobId, clientAddress
     if (!isDuplicateKeyError(saveErr)) {
       throw saveErr;
     }
-    const raced = await findJobForCreate(jobId);
-    if (raced && canAdoptJobForClient(raced, clientAddress, onchainClientAddress)) {
-      return adoptOrMergeJob(raced, fields);
+    const conflicting = await findConflictingJobForCreate(jobId);
+    if (conflicting && canAdoptJobForClient(conflicting, clientAddress, onchainClientAddress)) {
+      return adoptOrMergeJob(conflicting, fields);
     }
-    return raced;
+    return null;
   }
 }
 
@@ -637,10 +639,11 @@ const jobController = {
       );
 
       if (reconcile.action === 'collision' || reconcile.action === 'duplicate') {
-        if (
-          reconcile.job?.clientAddress === clientAddress ||
-          normalizeAddr(onchainClientAddress) === normalizeAddr(clientAddress)
-        ) {
+        const canAdopt =
+          normalizeAddr(onchainClientAddress) === normalizeAddr(clientAddress) ||
+          (reconcile.job &&
+            canAdoptJobForClient(reconcile.job, clientAddress, onchainClientAddress));
+        if (canAdopt) {
           const adopted = await adoptOrInsertJobAfterRace(
             reconcile,
             fields,

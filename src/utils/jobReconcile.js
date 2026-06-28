@@ -41,6 +41,16 @@ async function findJobForCreate(onchainJobId) {
   return Job.findOne(jobLookupFilter(onchainJobId));
 }
 
+/**
+ * Resolve duplicate-key races: scoped row first, then legacy/unscoped rows that
+ * still block inserts when jobRegistryAddress was missing or from a prior deployment.
+ */
+async function findConflictingJobForCreate(onchainJobId) {
+  const scoped = await findJobForCreate(onchainJobId);
+  if (scoped) return scoped;
+  return findLegacyJobForMigration(onchainJobId);
+}
+
 /** Migration scripts only — finds pre-scope Mongo rows for a given on-chain id. */
 async function findLegacyJobForMigration(onchainJobId) {
   const registry = getJobRegistryAddress();
@@ -149,7 +159,7 @@ async function reconcileJobAfterOnchainCreate(jobId, apiClientAddress, fields, o
       throw error;
     }
 
-    const raced = await findJobForCreate(jobId);
+    const raced = await findConflictingJobForCreate(jobId);
     if (raced && canAdoptJobForClient(raced, apiClientAddress, onchainClientAddress)) {
       const job = await adoptOrMergeJob(raced, fields);
       return { action: 'reconciled', job };
@@ -163,6 +173,7 @@ module.exports = {
   isIndexerStubJob,
   canAdoptJobForClient,
   findJobForCreate,
+  findConflictingJobForCreate,
   findLegacyJobForMigration,
   buildCreateJobFields,
   adoptOrMergeJob,
