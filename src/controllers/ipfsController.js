@@ -51,6 +51,7 @@ const ipfsController = {
       if (metadata.type) keyvalues.type = String(metadata.type);
       if (metadata.onchainJobId != null) keyvalues.onchainJobId = String(metadata.onchainJobId);
       if (metadata.jobId) keyvalues.jobId = String(metadata.jobId);
+      if (metadata.onChainHash) keyvalues.onChainHash = String(metadata.onChainHash);
       if (Object.keys(keyvalues).length > 0) {
         pinataMetadata.keyvalues = keyvalues;
       }

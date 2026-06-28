@@ -5,6 +5,7 @@ const User = require('../models/User');
 const contractService = require('../services/blockchain/contractService');
 const logger = require('../utils/logger');
 const { hydrateEvidenceContent } = require('../utils/evidenceHydrate');
+const { ensureDisputeForOnchainJob } = require('../utils/disputeUpsert');
 
 /**
  * 📝 Dispute Controller
@@ -88,8 +89,16 @@ const disputeController = {
   getDisputeByOnchainJob: async (req, res) => {
     try {
       const onchainJobId = Number(req.params.onchainJobId);
-      const dispute = await Dispute.findOne({ onchainJobId })
+      let dispute = await Dispute.findOne({ onchainJobId })
         .populate('jobId', 'title status contractValue onchainJobId clientAddress freelancerAddress');
+
+      if (!dispute) {
+        dispute = await ensureDisputeForOnchainJob(onchainJobId, { requireDisputed: true });
+        if (dispute) {
+          dispute = await Dispute.findById(dispute._id)
+            .populate('jobId', 'title status contractValue onchainJobId clientAddress freelancerAddress');
+        }
+      }
 
       if (!dispute) {
         return res.status(404).json({
@@ -256,9 +265,10 @@ const disputeController = {
         });
       }
 
-      // Check user is party to dispute
-      if (dispute.initiatorAddress !== submitterAddress && 
-          dispute.respondentAddress !== submitterAddress) {
+      if (
+        dispute.initiatorAddress !== submitterAddress &&
+        dispute.respondentAddress !== submitterAddress
+      ) {
         return res.status(403).json({ 
           success: false, 
           error: 'Only parties to the dispute can submit evidence' 
@@ -299,7 +309,14 @@ const disputeController = {
         });
       }
 
-      const dispute = await Dispute.findOne({ onchainJobId }).populate('jobId');
+      let dispute = await Dispute.findOne({ onchainJobId }).populate('jobId');
+      if (!dispute) {
+        dispute = await ensureDisputeForOnchainJob(onchainJobId, { requireDisputed: true });
+        if (dispute) {
+          dispute = await Dispute.findById(dispute._id).populate('jobId');
+        }
+      }
+
       if (!dispute) {
         return res.status(404).json({
           success: false,
@@ -307,10 +324,14 @@ const disputeController = {
         });
       }
 
-      if (
-        dispute.initiatorAddress !== submitterAddress &&
-        dispute.respondentAddress !== submitterAddress
-      ) {
+      const jobParties = [
+        dispute.initiatorAddress,
+        dispute.respondentAddress,
+        dispute.jobId?.clientAddress?.toLowerCase?.(),
+        dispute.jobId?.freelancerAddress?.toLowerCase?.(),
+      ].filter(Boolean);
+
+      if (!jobParties.includes(submitterAddress)) {
         return res.status(403).json({
           success: false,
           error: 'Only parties to the dispute can submit evidence',
@@ -340,12 +361,17 @@ const disputeController = {
    */
   getEvidences: async (req, res) => {
     try {
-      const dispute = await Dispute.findById(req.params.id);
+      let dispute = await Dispute.findById(req.params.id);
       if (!dispute) {
         return res.status(404).json({ 
           success: false, 
           error: 'Dispute not found' 
         });
+      }
+
+      if (dispute.onchainJobId) {
+        const synced = await ensureDisputeForOnchainJob(dispute.onchainJobId, { requireDisputed: false });
+        if (synced) dispute = synced;
       }
 
       const evidencesWithContent = await hydrateEvidenceContent(dispute.evidence, {
@@ -372,7 +398,12 @@ const disputeController = {
   getEvidencesByOnchainJob: async (req, res) => {
     try {
       const onchainJobId = Number(req.params.onchainJobId);
-      const dispute = await Dispute.findOne({ onchainJobId });
+      let dispute = await Dispute.findOne({ onchainJobId });
+
+      if (!dispute) {
+        dispute = await ensureDisputeForOnchainJob(onchainJobId, { requireDisputed: false });
+      }
+
       if (!dispute) {
         return res.status(404).json({
           success: false,

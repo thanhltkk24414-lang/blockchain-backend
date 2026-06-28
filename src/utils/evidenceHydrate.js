@@ -69,18 +69,31 @@ async function findCidInDatabase(onChainHash, onchainJobId) {
 }
 
 async function findCidFromPinata(onchainJobId, onChainHash) {
-  if (onchainJobId == null || !onChainHash) return null;
-  try {
-    const pins = await ipfsService.listPinsByMetadata('onchainJobId', String(onchainJobId));
-    const hash = String(onChainHash).toLowerCase();
-    for (const pin of pins) {
-      const cid = pin.cid;
-      if (!cid) continue;
-      if (cidToEvidenceHash(cid) === hash) return cid;
+  if (!onChainHash) return null;
+  const hash = String(onChainHash).toLowerCase();
+
+  const tryPins = async (key, value) => {
+    try {
+      const pins = await ipfsService.listPinsByMetadata(key, String(value));
+      for (const pin of pins) {
+        const cid = pin.cid;
+        if (!cid) continue;
+        if (cidToEvidenceHash(cid) === hash) return cid;
+      }
+    } catch (err) {
+      logger.warn(`Pinata evidence lookup failed (${key}=${value}): ${err.message}`);
     }
-  } catch (err) {
-    logger.warn(`Pinata evidence lookup failed for job ${onchainJobId}: ${err.message}`);
+    return null;
+  };
+
+  const byHash = await tryPins('onChainHash', hash);
+  if (byHash) return byHash;
+
+  if (onchainJobId != null) {
+    const byJob = await tryPins('onchainJobId', onchainJobId);
+    if (byJob) return byJob;
   }
+
   return null;
 }
 
