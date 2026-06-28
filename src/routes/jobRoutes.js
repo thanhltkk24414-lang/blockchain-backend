@@ -71,6 +71,23 @@ router.get(
 );
 
 router.post(
+  '/sync-onchain',
+  authenticate,
+  [
+    body('onchainJobId').notEmpty(),
+    body('title').optional().isString(),
+    body('description').optional().isString(),
+    body('category').optional().isString(),
+    body('contractValue').optional().isInt({ min: 1 }),
+    body('duration').optional().isInt({ min: 3600 }),
+    body('skills').optional().isArray(),
+    body('metadataCID').optional().isString(),
+  ],
+  validate,
+  jobController.syncOnchainJob
+);
+
+router.post(
   '/',
   authenticate,
   [

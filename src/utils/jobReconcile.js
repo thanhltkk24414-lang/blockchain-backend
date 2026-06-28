@@ -21,12 +21,14 @@ function isIndexerStubJob(job) {
 
 function canAdoptJobForClient(existingJob, apiClientAddress, onchainClientAddress) {
   const api = normalizeAddr(apiClientAddress);
+  const chain = normalizeAddr(onchainClientAddress || existingJob?.onchainClientAddress);
+
+  // On-chain owner is authoritative when reconciling after createJob.
+  if (chain && chain === api) return true;
+
   const db = normalizeAddr(existingJob?.clientAddress);
   if (db === api) return true;
   if (isIndexerStubJob(existingJob)) return true;
-
-  const chain = normalizeAddr(onchainClientAddress || existingJob?.onchainClientAddress);
-  if (chain && chain === api) return true;
 
   return false;
 }
@@ -101,7 +103,7 @@ async function adoptOrMergeJob(existingJob, fields) {
   existingJob.contractValue = fields.contractValue;
   existingJob.duration = fields.duration;
   existingJob.deadline = fields.deadline;
-  if (!existingJob.jobRegistryAddress && fields.jobRegistryAddress) {
+  if (fields.jobRegistryAddress) {
     existingJob.jobRegistryAddress = fields.jobRegistryAddress;
   }
   if (!existingJob.chainId && fields.chainId) {

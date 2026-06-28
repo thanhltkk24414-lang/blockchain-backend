@@ -40,7 +40,20 @@ function testIndexerStubAdopt() {
   assert.strictEqual(canAdoptJobForClient(existing, apiClient, apiClient), true);
 }
 
+function testChainOwnerOverridesStaleDbClient() {
+  const existing = {
+    clientAddress: '0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+    onchainClientAddress: '0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+    title: 'Stale owner row',
+    category: 'design',
+  };
+  const apiClient = '0xbd2975d8b1a923f1ad80046791bf4cc5570d616b';
+  const onchainClient = '0xbd2975d8b1a923f1ad80046791bf4cc5570d616b';
+  assert.strictEqual(canAdoptJobForClient(existing, apiClient, onchainClient), true);
+}
+
 testAdoptWhenOnchainClientMatchesApi();
 testRejectUnrelatedOwner();
 testIndexerStubAdopt();
+testChainOwnerOverridesStaleDbClient();
 console.log('test-job-reconcile: OK');

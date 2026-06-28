@@ -13,6 +13,20 @@ function getJobRegistryAddress() {
   return normalizeRegistryAddress(blockchain.getContractAddress('JobRegistry'));
 }
 
+function getLegacyJobRegistryAddress() {
+  return normalizeRegistryAddress(process.env.LEGACY_JOB_REGISTRY_ADDRESS);
+}
+
+/** Jobs missing jobRegistryAddress (pre-redeploy rows). */
+function buildUnscopedRegistryOrClause(registry) {
+  return [
+    { jobRegistryAddress: registry },
+    { jobRegistryAddress: { $exists: false } },
+    { jobRegistryAddress: null },
+    { jobRegistryAddress: '' },
+  ];
+}
+
 function jobLookupFilter(onchainJobId, registryAddress = getJobRegistryAddress()) {
   const filter = { onchainJobId: Number(onchainJobId) };
   if (registryAddress) {
@@ -29,11 +43,26 @@ function attachJobScope(fields = {}) {
   };
 }
 
-/** Public browse lists only jobs for the deployed JobRegistry (avoids stale pre-redeploy rows). */
+/** Strict match — create/indexer lookups for the active JobRegistry only. */
 function applyCurrentRegistryScope(baseQuery = {}) {
   const registry = getJobRegistryAddress();
   if (!registry) return baseQuery;
   return { ...baseQuery, jobRegistryAddress: registry };
+}
+
+/**
+ * Public browse: active deployment + unmigrated rows (missing registry field).
+ * Rows tagged LEGACY_JOB_REGISTRY_ADDRESS stay hidden from browse.
+ */
+function applyBrowseRegistryScope(baseQuery = {}) {
+  const registry = getJobRegistryAddress();
+  if (!registry) return baseQuery;
+
+  const registryClause = { $or: buildUnscopedRegistryOrClause(registry) };
+  if (Array.isArray(baseQuery.$and)) {
+    return { ...baseQuery, $and: [...baseQuery.$and, registryClause] };
+  }
+  return { ...baseQuery, $and: [registryClause] };
 }
 
 function isDuplicateKeyError(error) {
@@ -43,9 +72,12 @@ function isDuplicateKeyError(error) {
 module.exports = {
   getChainId,
   getJobRegistryAddress,
+  getLegacyJobRegistryAddress,
+  buildUnscopedRegistryOrClause,
   jobLookupFilter,
   attachJobScope,
   applyCurrentRegistryScope,
+  applyBrowseRegistryScope,
   isDuplicateKeyError,
   normalizeRegistryAddress,
 };
