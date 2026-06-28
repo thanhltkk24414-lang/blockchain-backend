@@ -6,7 +6,7 @@ const ipfsService = require('../config/ipfs');
 const contractService = require('../services/blockchain/contractService');
 const logger = require('../utils/logger');
 const { normalizeAddress, toChecksumAddress } = require('../utils/address');
-const { isDuplicateKeyError } = require('../utils/jobScope');
+const { isDuplicateKeyError, applyCurrentRegistryScope } = require('../utils/jobScope');
 const {
   buildCreateJobFields,
   reconcileJobAfterOnchainCreate,
@@ -43,7 +43,7 @@ const jobController = {
       if (search) {
         extra.$text = { $search: search };
       }
-      const query = applyBrowseStatusFilter(extra, status);
+      const query = applyBrowseStatusFilter(applyCurrentRegistryScope(extra), status);
 
       // Sort
       const sort = {};
@@ -100,7 +100,7 @@ const jobController = {
       }
 
       const requestedStatus = status ? String(status).toUpperCase() : null;
-      const query = applyBrowseStatusFilter(extra, requestedStatus);
+      const query = applyBrowseStatusFilter(applyCurrentRegistryScope(extra), requestedStatus);
 
       const jobsRaw = await Job.find(query)
         .sort(q ? { score: { $meta: 'textScore' } } : { createdAt: -1 })

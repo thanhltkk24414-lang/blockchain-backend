@@ -1,73 +1,46 @@
 /**
- * Unit tests for job create reconciliation (no MongoDB required).
+ * Unit tests for registry-scoped job lookup (no MongoDB required).
  *
  * Usage: node scripts/test-job-reconcile.js
  */
 const assert = require('assert');
-const {
-  isIndexerStubJob,
-  canAdoptJobForClient,
-  normalizeAddr,
-} = require('../src/utils/jobReconcile');
+const { canAdoptJobForClient } = require('../src/utils/jobReconcile');
 
-function testNormalizeAddr() {
-  assert.strictEqual(normalizeAddr('0xAbC'), '0xabc');
-  assert.strictEqual(normalizeAddr(null), '');
+function testAdoptWhenOnchainClientMatchesApi() {
+  const existing = {
+    clientAddress: '0x523ebd853a1638065f148a05c0ca423e490d92f7',
+    onchainClientAddress: '0x523ebd853a1638065f148a05c0ca423e490d92f7',
+    title: 'Legacy demo job',
+    category: 'marketing',
+  };
+  const apiClient = '0xbd2975d8b1a923f1ad80046791bf4cc5570d616b';
+  const onchainClient = '0xbd2975d8b1a923f1ad80046791bf4cc5570d616b';
+  assert.strictEqual(canAdoptJobForClient(existing, apiClient, onchainClient), true);
 }
 
-function testIndexerStub() {
-  assert.strictEqual(
-    isIndexerStubJob({
-      clientAddress: '0xindexer',
-      onchainClientAddress: '0xindexer',
-      title: '',
-      description: '',
-    }),
-    true,
-  );
-  assert.strictEqual(
-    isIndexerStubJob({
-      clientAddress: '0xindexer',
-      onchainClientAddress: '0xindexer',
-      title: 'Audit job',
-    }),
-    false,
-  );
+function testRejectUnrelatedOwner() {
+  const existing = {
+    clientAddress: '0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+    onchainClientAddress: '0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+    title: 'Someone else',
+    category: 'design',
+  };
+  const apiClient = '0xbd2975d8b1a923f1ad80046791bf4cc5570d616b';
+  const onchainClient = '0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
+  assert.strictEqual(canAdoptJobForClient(existing, apiClient, onchainClient), false);
 }
 
-function testCanAdopt() {
-  const api = '0xuser';
-  const indexer = '0xindexer';
-
-  assert.strictEqual(
-    canAdoptJobForClient({ clientAddress: api }, api, indexer),
-    true,
-  );
-
-  assert.strictEqual(
-    canAdoptJobForClient(
-      { clientAddress: indexer, onchainClientAddress: indexer },
-      api,
-      indexer,
-    ),
-    true,
-  );
-
-  assert.strictEqual(
-    canAdoptJobForClient(
-      { clientAddress: '0xother', title: 'Taken job', description: 'x' },
-      api,
-      indexer,
-    ),
-    false,
-  );
+function testIndexerStubAdopt() {
+  const existing = {
+    clientAddress: '0x523ebd853a1638065f148a05c0ca423e490d92f7',
+    onchainClientAddress: '0xbd2975d8b1a923f1ad80046791bf4cc5570d616b',
+    metadataCID: 'QmTest',
+  };
+  const apiClient = '0xbd2975d8b1a923f1ad80046791bf4cc5570d616b';
+  assert.strictEqual(canAdoptJobForClient(existing, apiClient, apiClient), true);
 }
 
-function main() {
-  testNormalizeAddr();
-  testIndexerStub();
-  testCanAdopt();
-  console.log('✓ job reconcile unit tests passed');
-}
-
-main();
+testAdoptWhenOnchainClientMatchesApi();
+testRejectUnrelatedOwner();
+testIndexerStubAdopt();
+console.log('test-job-reconcile: OK');

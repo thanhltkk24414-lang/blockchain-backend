@@ -26,16 +26,21 @@ function canAdoptJobForClient(existingJob, apiClientAddress, onchainClientAddres
   if (isIndexerStubJob(existingJob)) return true;
 
   const chain = normalizeAddr(onchainClientAddress || existingJob?.onchainClientAddress);
-  if (chain && db === chain) return true;
+  if (chain && chain === api) return true;
 
   return false;
 }
 
+/**
+ * Lookup for create/reconcile/indexer — scoped to the active JobRegistry only.
+ * Legacy rows without jobRegistryAddress must not block the same onchainJobId on a redeployed registry.
+ */
 async function findJobForCreate(onchainJobId) {
-  const scoped = jobLookupFilter(onchainJobId);
-  let job = await Job.findOne(scoped);
-  if (job) return job;
+  return Job.findOne(jobLookupFilter(onchainJobId));
+}
 
+/** Migration scripts only — finds pre-scope Mongo rows for a given on-chain id. */
+async function findLegacyJobForMigration(onchainJobId) {
   const registry = getJobRegistryAddress();
   return Job.findOne({
     onchainJobId: Number(onchainJobId),
@@ -147,6 +152,7 @@ module.exports = {
   isIndexerStubJob,
   canAdoptJobForClient,
   findJobForCreate,
+  findLegacyJobForMigration,
   buildCreateJobFields,
   adoptOrMergeJob,
   reconcileJobAfterOnchainCreate,
