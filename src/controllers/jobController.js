@@ -6,10 +6,12 @@ const ipfsService = require('../config/ipfs');
 const contractService = require('../services/blockchain/contractService');
 const logger = require('../utils/logger');
 const { normalizeAddress, toChecksumAddress } = require('../utils/address');
-const { isDuplicateKeyError, applyCurrentRegistryScope } = require('../utils/jobScope');
+const { isDuplicateKeyError, applyBrowseRegistryScope } = require('../utils/jobScope');
 const {
   buildCreateJobFields,
   reconcileJobAfterOnchainCreate,
+  adoptOrMergeJob,
+  normalizeAddr,
 } = require('../utils/jobReconcile');
 const {
   applyBrowseStatusFilter,
@@ -43,7 +45,7 @@ const jobController = {
       if (search) {
         extra.$text = { $search: search };
       }
-      const query = applyBrowseStatusFilter(applyCurrentRegistryScope(extra), status);
+      const query = applyBrowseStatusFilter(applyBrowseRegistryScope(extra), status);
 
       // Sort
       const sort = {};
@@ -100,7 +102,7 @@ const jobController = {
       }
 
       const requestedStatus = status ? String(status).toUpperCase() : null;
-      const query = applyBrowseStatusFilter(applyCurrentRegistryScope(extra), requestedStatus);
+      const query = applyBrowseStatusFilter(applyBrowseRegistryScope(extra), requestedStatus);
 
       const jobsRaw = await Job.find(query)
         .sort(q ? { score: { $meta: 'textScore' } } : { createdAt: -1 })
@@ -595,23 +597,34 @@ const jobController = {
       );
 
       if (reconcile.action === 'collision' || reconcile.action === 'duplicate') {
-        if (reconcile.job?.clientAddress === clientAddress) {
+        if (
+          reconcile.job?.clientAddress === clientAddress ||
+          normalizeAddr(onchainClientAddress) === normalizeAddr(clientAddress)
+        ) {
+          const adopted =
+            reconcile.action === 'collision' &&
+            normalizeAddr(onchainClientAddress) === normalizeAddr(clientAddress)
+              ? await adoptOrMergeJob(reconcile.job, fields)
+              : reconcile.job;
           return res.status(200).json({
             success: true,
             message: 'Job already registered for this wallet',
             jobId,
             onchainJobId: jobId,
             onchainClientAddress,
-            metadataCID: reconcile.job.metadataCID,
-            job: reconcile.job,
+            metadataCID: adopted.metadataCID,
+            job: adopted,
+            reconciled: reconcile.action === 'collision',
           });
         }
         return res.status(409).json({
           success: false,
           code: 'ONCHAIN_JOB_ID_COLLISION',
           error: `On-chain job id ${jobId} is already used in the database for this JobRegistry deployment.`,
+          onchainJobId: jobId,
           hint:
-            'If JobRegistry was redeployed, run scripts/migrate-job-registry-index.js with LEGACY_JOB_REGISTRY_ADDRESS for old jobs, or remove stale MongoDB job records.',
+            'If you own this job on-chain, use POST /api/jobs/sync-onchain with the same metadata to adopt the MongoDB row. ' +
+            'If JobRegistry was redeployed, run scripts/migrate-job-registry-index.js with LEGACY_JOB_REGISTRY_ADDRESS.',
         });
       }
 
@@ -655,6 +668,145 @@ const jobController = {
         success: false, 
         error: error.message 
       });
+    }
+  },
+
+  /**
+   * POST /api/jobs/sync-onchain
+   * Adopt/reconcile a MongoDB row after the user already called createJob on-chain.
+   */
+  syncOnchainJob: async (req, res) => {
+    try {
+      const {
+        title,
+        description,
+        category,
+        contractValue,
+        duration,
+        skills,
+        deliverables,
+        acceptanceCriteria,
+        onchainJobId,
+        metadataCID,
+      } = req.body;
+
+      const clientAddress = req.user?.walletAddress;
+      if (!clientAddress) {
+        return res.status(401).json({ success: false, error: 'Authentication required' });
+      }
+
+      if (onchainJobId == null || onchainJobId === '') {
+        return res.status(400).json({
+          success: false,
+          code: 'ONCHAIN_JOB_ID_REQUIRED',
+          error: 'onchainJobId is required',
+        });
+      }
+
+      if (!contractService.isValidOnchainJobId(onchainJobId)) {
+        return res.status(400).json({
+          success: false,
+          code: 'ONCHAIN_JOB_ID_INVALID',
+          error: `Invalid on-chain job id: ${onchainJobId}`,
+        });
+      }
+
+      let onChainJob;
+      try {
+        onChainJob = await contractService.getJob(onchainJobId);
+      } catch (chainReadError) {
+        logger.error('getJob failed during sync-onchain', chainReadError);
+        return res.status(503).json({
+          success: false,
+          code: 'ONCHAIN_JOB_READ_FAILED',
+          error: chainReadError.message || 'Could not read job from JobRegistry',
+        });
+      }
+
+      const onchainClientAddress = onChainJob?.client?.toLowerCase?.() || null;
+      if (!onchainClientAddress) {
+        return res.status(404).json({
+          success: false,
+          code: 'ONCHAIN_JOB_NOT_FOUND',
+          error: `Job ${onchainJobId} not found on JobRegistry`,
+        });
+      }
+
+      if (onchainClientAddress !== clientAddress.toLowerCase()) {
+        return res.status(403).json({
+          success: false,
+          code: 'ONCHAIN_CLIENT_MISMATCH',
+          error: 'On-chain job client must match your signed-in wallet',
+          onchainClientAddress: onChainJob.client,
+        });
+      }
+
+      const chainMetadataCID = onChainJob.metadataCID || onChainJob.jobMetadataCID || null;
+      const resolvedMetadataCID = metadataCID || chainMetadataCID;
+      if (!resolvedMetadataCID) {
+        return res.status(400).json({
+          success: false,
+          code: 'METADATA_CID_REQUIRED',
+          error: 'metadataCID is required',
+        });
+      }
+
+      const jobId = Number(onchainJobId);
+      const deadline = Math.floor(Date.now() / 1000) + (duration || 86400);
+
+      const fields = buildCreateJobFields({
+        jobId,
+        clientAddress,
+        onchainClientAddress,
+        metadataResult: { cid: resolvedMetadataCID },
+        title,
+        description,
+        category,
+        skills,
+        contractValue: contractValue || 0,
+        duration: duration || 86400,
+        deadline,
+        onChainJob,
+      });
+
+      const reconcile = await reconcileJobAfterOnchainCreate(
+        jobId,
+        clientAddress,
+        fields,
+        onchainClientAddress,
+      );
+
+      if (reconcile.action === 'collision' || reconcile.action === 'duplicate') {
+        const job = await adoptOrMergeJob(reconcile.job, fields);
+        return res.status(200).json({
+          success: true,
+          message: 'Job synced from on-chain state',
+          jobId,
+          onchainJobId: jobId,
+          onchainClientAddress,
+          metadataCID: resolvedMetadataCID,
+          reconciled: true,
+          job,
+        });
+      }
+
+      const statusCode = reconcile.action === 'created' ? 201 : 200;
+      return res.status(statusCode).json({
+        success: true,
+        message:
+          reconcile.action === 'created'
+            ? 'Job registered from on-chain state'
+            : 'Job linked to your account',
+        jobId,
+        onchainJobId: jobId,
+        onchainClientAddress,
+        metadataCID: resolvedMetadataCID,
+        reconciled: reconcile.action === 'reconciled',
+        job: reconcile.job,
+      });
+    } catch (error) {
+      logger.error('Sync onchain job error:', error);
+      res.status(500).json({ success: false, error: error.message });
     }
   },
 

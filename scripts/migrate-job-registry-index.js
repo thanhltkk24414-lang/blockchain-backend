@@ -1,61 +1,80 @@
-#!/usr/bin/env node
 /**
- * Backfill jobRegistryAddress / chainId and replace global onchainJobId unique index
- * with compound (onchainJobId + jobRegistryAddress).
+ * One-time migration: tag pre-redeploy MongoDB jobs with LEGACY_JOB_REGISTRY_ADDRESS
+ * so they no longer collide with onchainJobIds on the redeployed JobRegistry.
  *
- * Usage:
- *   LEGACY_JOB_REGISTRY_ADDRESS=0xOldRegistry... node scripts/migrate-job-registry-index.js
- *   node scripts/migrate-job-registry-index.js   # uses JOB_REGISTRY_ADDRESS for all missing rows
+ * Usage (from backend/):
+ *   LEGACY_JOB_REGISTRY_ADDRESS=0xE5425cFE21BAe73d54138Bb290B671bF4c55FBC9 \
+ *   JOB_REGISTRY_ADDRESS=0x302629f82d51b0972ffc3A99cbE355F4acEf908d \
+ *   node scripts/migrate-job-registry-index.js
+ *
+ * Add --dry-run to preview counts without writing.
  */
-require('dotenv').config({ path: require('path').join(__dirname, '../.env') });
+require('dotenv').config();
 const mongoose = require('mongoose');
 const Job = require('../src/models/Job');
-const { normalizeRegistryAddress } = require('../src/utils/jobScope');
+const {
+  getJobRegistryAddress,
+  getLegacyJobRegistryAddress,
+  normalizeRegistryAddress,
+} = require('../src/utils/jobScope');
+
+const dryRun = process.argv.includes('--dry-run');
 
 async function main() {
-  const uri = process.env.MONGODB_URI || process.env.MONGO_URI;
-  if (!uri) {
-    console.error('MONGODB_URI is required');
-    process.exit(1);
+  const current = getJobRegistryAddress();
+  const legacy =
+    getLegacyJobRegistryAddress() ||
+    normalizeRegistryAddress('0xE5425cFE21BAe73d54138Bb290B671bF4c55FBC9');
+
+  if (!current) {
+    throw new Error('JOB_REGISTRY_ADDRESS must be set');
+  }
+  if (!legacy) {
+    throw new Error('LEGACY_JOB_REGISTRY_ADDRESS must be set');
+  }
+  if (current === legacy) {
+    throw new Error('LEGACY_JOB_REGISTRY_ADDRESS must differ from JOB_REGISTRY_ADDRESS');
   }
 
-  const currentRegistry = normalizeRegistryAddress(process.env.JOB_REGISTRY_ADDRESS);
-  const legacyRegistry = normalizeRegistryAddress(process.env.LEGACY_JOB_REGISTRY_ADDRESS);
-  const chainId = Number(process.env.CHAIN_ID || 11155111);
-
-  if (!currentRegistry) {
-    console.error('JOB_REGISTRY_ADDRESS is required');
-    process.exit(1);
+  const mongoUri = process.env.MONGODB_URI || process.env.MONGO_URI;
+  if (!mongoUri) {
+    throw new Error('MONGODB_URI is not set');
   }
 
-  await mongoose.connect(uri);
-  const collection = Job.collection;
+  await mongoose.connect(mongoUri);
+  console.log(`Connected. current=${current} legacy=${legacy} dryRun=${dryRun}`);
 
-  const missing = await Job.find({
-    $or: [{ jobRegistryAddress: { $exists: false } }, { jobRegistryAddress: null }, { jobRegistryAddress: '' }],
-  });
+  const filter = {
+    onchainJobId: { $exists: true },
+    $or: [
+      { jobRegistryAddress: { $exists: false } },
+      { jobRegistryAddress: null },
+      { jobRegistryAddress: '' },
+      { jobRegistryAddress: { $ne: current } },
+    ],
+  };
 
-  console.log(`Jobs missing jobRegistryAddress: ${missing.length}`);
-  for (const job of missing) {
-    const registry = legacyRegistry || currentRegistry;
-    job.jobRegistryAddress = registry;
-    if (!job.chainId) job.chainId = chainId;
-    await job.save();
-    console.log(`  backfilled job ${job.onchainJobId} → ${registry}`);
+  const toMigrate = await Job.find(filter).select('onchainJobId jobRegistryAddress clientAddress');
+  console.log(`Found ${toMigrate.length} job(s) to tag as legacy`);
+
+  for (const job of toMigrate.slice(0, 20)) {
+    console.log(
+      `  id=${job.onchainJobId} registry=${job.jobRegistryAddress || '(none)'} client=${job.clientAddress}`,
+    );
+  }
+  if (toMigrate.length > 20) {
+    console.log(`  ... and ${toMigrate.length - 20} more`);
   }
 
-  const indexes = await collection.indexes();
-  for (const idx of indexes) {
-    const keys = Object.keys(idx.key || {});
-    if (keys.length === 1 && keys[0] === 'onchainJobId' && idx.unique) {
-      console.log(`Dropping legacy index ${idx.name}`);
-      await collection.dropIndex(idx.name);
-    }
+  if (!dryRun && toMigrate.length > 0) {
+    const result = await Job.updateMany(filter, {
+      $set: { jobRegistryAddress: legacy, chainId: Number(process.env.CHAIN_ID || 11155111) },
+    });
+    console.log(`Updated ${result.modifiedCount} document(s)`);
   }
 
-  await Job.syncIndexes();
-  console.log('Indexes synced:', (await collection.indexes()).map((i) => i.name).join(', '));
   await mongoose.disconnect();
+  console.log('Done.');
 }
 
 main().catch((err) => {
