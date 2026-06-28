@@ -1,4 +1,5 @@
 const Job = require('../models/Job');
+const Bid = require('../models/Bid');
 const { jobLookupFilter, attachJobScope, getJobRegistryAddress } = require('./jobScope');
 const logger = require('./logger');
 
@@ -108,10 +109,26 @@ function buildCreateJobFields({
   });
 }
 
+function shouldClearAssignmentOnOpenChain(chainStatus, mongoStatus, hasMongoFreelancer) {
+  if (String(chainStatus).toUpperCase() !== 'OPEN') return false;
+  return mongoStatus !== 'OPEN' || Boolean(hasMongoFreelancer);
+}
+
+/** Remove proposals and assignment fields left from a prior MongoDB row reusing this onchainJobId. */
+async function clearStaleJobAssociations(jobId) {
+  const deleted = await Bid.deleteMany({ jobId });
+  if (deleted.deletedCount > 0) {
+    logger.info(`Cleared ${deleted.deletedCount} stale bid(s) for job ${jobId}`);
+  }
+}
+
 async function adoptOrMergeJob(existingJob, fields) {
   if (!existingJob) {
     throw new Error('Cannot adopt job: MongoDB row not found');
   }
+
+  await clearStaleJobAssociations(existingJob._id);
+
   existingJob.clientAddress = fields.clientAddress;
   existingJob.onchainClientAddress = fields.onchainClientAddress;
   existingJob.metadataCID = fields.metadataCID;
@@ -122,6 +139,16 @@ async function adoptOrMergeJob(existingJob, fields) {
   existingJob.contractValue = fields.contractValue;
   existingJob.duration = fields.duration;
   existingJob.deadline = fields.deadline;
+  existingJob.status = fields.status || 'OPEN';
+  existingJob.totalDeposit = fields.totalDeposit;
+  existingJob.platformFee = fields.platformFee;
+  existingJob.freelancerAddress = undefined;
+  existingJob.onchainFreelancerAddress = undefined;
+  existingJob.deliverableCID = undefined;
+  existingJob.assignedAt = undefined;
+  existingJob.submittedAt = undefined;
+  existingJob.isDisputed = false;
+  existingJob.isActive = true;
   if (fields.jobRegistryAddress) {
     existingJob.jobRegistryAddress = fields.jobRegistryAddress;
   }
@@ -134,6 +161,87 @@ async function adoptOrMergeJob(existingJob, fields) {
     `Reconciled job ${existingJob.onchainJobId} for API client ${fields.clientAddress} (was indexer stub or race)`,
   );
   return existingJob;
+}
+
+/**
+ * Align MongoDB with a live JobRegistry read on job detail / browse.
+ * Clears stale assignment and accepted bids when chain reports OPEN.
+ */
+async function reconcileJobFromChainRead(job, onchain) {
+  if (!job || !onchain?.onchainStatus) {
+    return { updated: false, warnings: [] };
+  }
+
+  const warnings = [];
+  let updated = false;
+  const chainClient = normalizeAddr(onchain.onchainClientAddress);
+  const dbClient = normalizeAddr(job.clientAddress);
+
+  if (chainClient && normalizeAddr(job.onchainClientAddress) !== chainClient) {
+    job.onchainClientAddress = chainClient;
+    updated = true;
+  }
+
+  if (chainClient && dbClient && chainClient !== dbClient) {
+    warnings.push({
+      code: 'CLIENT_ADDRESS_DRIFT',
+      mongoClientAddress: dbClient,
+      onchainClientAddress: chainClient,
+      hint:
+        'MongoDB clientAddress is the API metadata owner; onchainClientAddress is JobRegistry msg.sender. ' +
+        'If both should match, re-sync the job or create a new on-chain job id.',
+    });
+  }
+
+  const chainStatus = String(onchain.onchainStatus).toUpperCase();
+
+  if (chainStatus === 'OPEN') {
+    if (shouldClearAssignmentOnOpenChain(chainStatus, job.status, job.freelancerAddress || job.onchainFreelancerAddress)) {
+      if (job.freelancerAddress || job.onchainFreelancerAddress) {
+        job.freelancerAddress = undefined;
+        job.onchainFreelancerAddress = undefined;
+        job.assignedAt = undefined;
+        updated = true;
+      }
+      if (job.status !== 'OPEN') {
+        const previousStatus = job.status;
+        job.status = 'OPEN';
+        job.statusHistory = job.statusHistory || [];
+        job.statusHistory.push({
+          status: 'OPEN',
+          note: 'Reset to OPEN from on-chain reconcile (stale MongoDB assignment)',
+        });
+        updated = true;
+        warnings.push({ code: 'STALE_STATUS_RESET', previousStatus });
+      }
+    }
+    const staleAccepted = await Bid.countDocuments({ jobId: job._id, status: 'accepted' });
+    if (staleAccepted > 0) {
+      await Bid.updateMany(
+        { jobId: job._id, status: 'accepted' },
+        { $set: { status: 'rejected' } },
+      );
+      warnings.push({ code: 'STALE_ACCEPTED_BIDS_REJECTED', count: staleAccepted });
+      updated = true;
+    }
+  } else if (onchain.onchainFreelancerAddress) {
+    const norm = normalizeAddr(onchain.onchainFreelancerAddress);
+    if (job.onchainFreelancerAddress !== onchain.onchainFreelancerAddress) {
+      job.onchainFreelancerAddress = onchain.onchainFreelancerAddress;
+      updated = true;
+    }
+    if (norm && job.freelancerAddress !== norm) {
+      job.freelancerAddress = norm;
+      updated = true;
+    }
+  }
+
+  if (updated) {
+    await job.save();
+    logger.info(`Job ${job.onchainJobId} reconciled from chain read (${warnings.length} warning(s))`);
+  }
+
+  return { updated, warnings };
 }
 
 /**
@@ -176,6 +284,9 @@ module.exports = {
   findConflictingJobForCreate,
   findLegacyJobForMigration,
   buildCreateJobFields,
+  clearStaleJobAssociations,
   adoptOrMergeJob,
   reconcileJobAfterOnchainCreate,
+  reconcileJobFromChainRead,
+  shouldClearAssignmentOnOpenChain,
 };

@@ -6,6 +6,7 @@ const ipfsService = require('../config/ipfs');
 const contractService = require('../services/blockchain/contractService');
 const logger = require('../utils/logger');
 const { normalizeAddress, toChecksumAddress } = require('../utils/address');
+const { getJobRegistryAddress } = require('../utils/jobScope');
 
 /**
  * 📝 Bid Controller
@@ -19,14 +20,40 @@ const bidController = {
   getBidsByJob: async (req, res) => {
     try {
       const { jobId } = req.params;
-      
-      const bids = await Bid.find({ jobId })
-        .sort({ bidAmount: 1 });
+
+      const job = await Job.findById(jobId);
+      if (!job) {
+        return res.status(404).json({
+          success: false,
+          error: 'Job not found',
+        });
+      }
+
+      const registry = getJobRegistryAddress();
+      if (
+        registry &&
+        job.jobRegistryAddress &&
+        job.jobRegistryAddress !== registry
+      ) {
+        return res.status(409).json({
+          success: false,
+          error: 'Job belongs to a different JobRegistry deployment',
+          code: 'JOB_REGISTRY_MISMATCH',
+        });
+      }
+
+      const bids = await Bid.find({
+        jobId: job._id,
+        onchainJobId: job.onchainJobId,
+      }).sort({ bidAmount: 1 });
 
       res.json({
         success: true,
         bids,
-        count: bids.length
+        count: bids.length,
+        jobId: job._id.toString(),
+        onchainJobId: job.onchainJobId,
+        jobRegistryAddress: job.jobRegistryAddress || registry || null,
       });
     } catch (error) {
       logger.error('Get bids by job error:', error);
