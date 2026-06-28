@@ -15,6 +15,7 @@ const {
   canAdoptJobForClient,
   findJobForCreate,
   findConflictingJobForCreate,
+  reconcileJobFromChainRead,
 } = require('../utils/jobReconcile');
 const {
   applyBrowseStatusFilter,
@@ -330,6 +331,8 @@ const jobController = {
         }
       }
 
+      const chainReconcile = await reconcileJobFromChainRead(job, onchain);
+
       const jobJson = job.toObject();
       if (onchain) {
         jobJson.onchainStatus = onchain.onchainStatus;
@@ -348,6 +351,7 @@ const jobController = {
         job: jobJson,
         metadata,
         onchain,
+        reconcileWarnings: chainReconcile.warnings,
       });
     } catch (error) {
       logger.error('Get job by id error:', error);

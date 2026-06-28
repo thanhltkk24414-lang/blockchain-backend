@@ -4,7 +4,10 @@
  * Usage: node scripts/test-job-reconcile.js
  */
 const assert = require('assert');
-const { canAdoptJobForClient } = require('../src/utils/jobReconcile');
+const {
+  canAdoptJobForClient,
+  shouldClearAssignmentOnOpenChain,
+} = require('../src/utils/jobReconcile');
 
 function testAdoptWhenOnchainClientMatchesApi() {
   const existing = {
@@ -52,8 +55,24 @@ function testChainOwnerOverridesStaleDbClient() {
   assert.strictEqual(canAdoptJobForClient(existing, apiClient, onchainClient), true);
 }
 
+function testClearAssignmentWhenChainOpenButMongoAssigned() {
+  assert.strictEqual(
+    shouldClearAssignmentOnOpenChain('OPEN', 'ASSIGNED', true),
+    true,
+  );
+  assert.strictEqual(
+    shouldClearAssignmentOnOpenChain('OPEN', 'OPEN', false),
+    false,
+  );
+  assert.strictEqual(
+    shouldClearAssignmentOnOpenChain('ASSIGNED', 'ASSIGNED', true),
+    false,
+  );
+}
+
 testAdoptWhenOnchainClientMatchesApi();
 testRejectUnrelatedOwner();
 testIndexerStubAdopt();
 testChainOwnerOverridesStaleDbClient();
+testClearAssignmentWhenChainOpenButMongoAssigned();
 console.log('test-job-reconcile: OK');
