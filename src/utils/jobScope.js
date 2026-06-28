@@ -29,6 +29,13 @@ function attachJobScope(fields = {}) {
   };
 }
 
+/** Public browse lists only jobs for the deployed JobRegistry (avoids stale pre-redeploy rows). */
+function applyCurrentRegistryScope(baseQuery = {}) {
+  const registry = getJobRegistryAddress();
+  if (!registry) return baseQuery;
+  return { ...baseQuery, jobRegistryAddress: registry };
+}
+
 function isDuplicateKeyError(error) {
   return error?.code === 11000 || error?.code === 11001;
 }
@@ -38,6 +45,7 @@ module.exports = {
   getJobRegistryAddress,
   jobLookupFilter,
   attachJobScope,
+  applyCurrentRegistryScope,
   isDuplicateKeyError,
   normalizeRegistryAddress,
 };
