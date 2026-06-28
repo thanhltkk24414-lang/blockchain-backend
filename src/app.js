@@ -17,6 +17,7 @@ const disputeRoutes = require('./routes/disputeRoutes');
 const reviewRoutes = require('./routes/reviewRoutes');
 const ipfsRoutes = require('./routes/ipfsRoutes');
 const arbitratorRoutes = require('./routes/arbitratorRoutes');
+const adminRoutes = require('./routes/adminRoutes');
 
 const app = express();
 
@@ -133,6 +134,7 @@ app.use('/api/disputes', disputeRoutes);
 app.use('/api/reviews', reviewRoutes);
 app.use('/api/ipfs', ipfsRoutes);
 app.use('/api/arbitrator', arbitratorRoutes);
+app.use('/api/admin', adminRoutes);
 
 // =============================================
 // 📌 ERROR HANDLING
