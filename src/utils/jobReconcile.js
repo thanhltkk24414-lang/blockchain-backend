@@ -69,6 +69,12 @@ function buildCreateJobFields({
   deadline,
   onChainJob,
 }) {
+  const cid =
+    typeof metadataResult?.cid === 'string' ? metadataResult.cid.trim() : metadataResult?.cid;
+  if (!cid) {
+    throw new Error('metadataCID is required');
+  }
+
   const mappedStatus =
     onChainJob?.status === 0 || onChainJob?.status === 'OPEN' ? 'OPEN' : undefined;
 
@@ -76,7 +82,7 @@ function buildCreateJobFields({
     onchainJobId: jobId,
     clientAddress,
     onchainClientAddress,
-    metadataCID: metadataResult.cid,
+    metadataCID: cid,
     title,
     description,
     category,
@@ -93,6 +99,9 @@ function buildCreateJobFields({
 }
 
 async function adoptOrMergeJob(existingJob, fields) {
+  if (!existingJob) {
+    throw new Error('Cannot adopt job: MongoDB row not found');
+  }
   existingJob.clientAddress = fields.clientAddress;
   existingJob.onchainClientAddress = fields.onchainClientAddress;
   existingJob.metadataCID = fields.metadataCID;

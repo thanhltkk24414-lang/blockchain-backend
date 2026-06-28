@@ -165,8 +165,18 @@ class EventIndexer {
         if (existing) continue;
 
         const jobData = await contractService.getJob(jobNumber);
+        if (!jobData?.client) {
+          logger.warn(`Job ${jobNumber} not readable from JobRegistry — skipping indexer insert`);
+          continue;
+        }
         const chainClient = client.toLowerCase();
         await this.ensureUser(client);
+
+        const metadataCID = jobData.metadataCID || jobData.jobMetadataCID;
+        if (!metadataCID) {
+          logger.warn(`Job ${jobNumber} has no metadataCID on chain — skipping indexer insert`);
+          continue;
+        }
 
         const job = new Job(attachJobScope({
           onchainJobId: jobNumber,
@@ -175,7 +185,7 @@ class EventIndexer {
           contractValue: Number(contractValue),
           status: this.mapStatus(jobData.status),
           deadline: jobData.deadline,
-          metadataCID: jobData.metadataCID,
+          metadataCID,
           deliverableCID: jobData.deliverableCID,
           isActive: true,
           lastSyncedBlock: toBlock,

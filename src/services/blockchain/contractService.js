@@ -197,7 +197,10 @@ class ContractService {
       await this.init();
       const contract = blockchain.getContract('JobRegistry');
       const job = await contract.getJob(jobId);
-      
+      if (!job?.client) {
+        return null;
+      }
+
       return {
         client: job.client,
         status: Number(job.status),
@@ -206,8 +209,9 @@ class ContractService {
         deadline: Number(job.deadline),
         submittedAt: Number(job.submittedAt),
         assignedAt: Number(job.assignedAt),
-        metadataCID: job.jobMetadataCID,
-        deliverableCID: job.deliverableCID
+        metadataCID: job.jobMetadataCID || null,
+        jobMetadataCID: job.jobMetadataCID || null,
+        deliverableCID: job.deliverableCID,
       };
     } catch (error) {
       logger.error('Get job error:', error);

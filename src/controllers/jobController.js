@@ -12,11 +12,51 @@ const {
   reconcileJobAfterOnchainCreate,
   adoptOrMergeJob,
   normalizeAddr,
+  canAdoptJobForClient,
+  findJobForCreate,
 } = require('../utils/jobReconcile');
 const {
   applyBrowseStatusFilter,
   finalizeBrowseOpenListings,
 } = require('../utils/browseJobs');
+
+function resolveChainMetadata(onChainJob, requestMetadataCID) {
+  if (!onChainJob) {
+    return { chainMetadataCID: null, resolvedMetadataCID: requestMetadataCID || null };
+  }
+  const chainMetadataCID = onChainJob.metadataCID || onChainJob.jobMetadataCID || null;
+  const resolvedMetadataCID = requestMetadataCID || chainMetadataCID;
+  return { chainMetadataCID, resolvedMetadataCID };
+}
+
+async function adoptOrInsertJobAfterRace(reconcile, fields, jobId, clientAddress, onchainClientAddress) {
+  const ownsOnChain = normalizeAddr(onchainClientAddress) === normalizeAddr(clientAddress);
+
+  if (reconcile.job && ownsOnChain) {
+    return adoptOrMergeJob(reconcile.job, fields);
+  }
+  if (reconcile.job) {
+    return reconcile.job;
+  }
+  if (!ownsOnChain) {
+    return null;
+  }
+
+  try {
+    const job = new Job(fields);
+    await job.save();
+    return job;
+  } catch (saveErr) {
+    if (!isDuplicateKeyError(saveErr)) {
+      throw saveErr;
+    }
+    const raced = await findJobForCreate(jobId);
+    if (raced && canAdoptJobForClient(raced, clientAddress, onchainClientAddress)) {
+      return adoptOrMergeJob(raced, fields);
+    }
+    return raced;
+  }
+}
 
 /**
  * 📝 Job Controller
@@ -538,7 +578,7 @@ const jobController = {
         });
       }
 
-      const chainMetadataCID = onChainJob.metadataCID || onChainJob.jobMetadataCID || null;
+      const chainMetadataCID = onChainJob?.metadataCID || onChainJob?.jobMetadataCID || null;
       const resolvedMetadataCID = metadataCID || chainMetadataCID;
       if (!resolvedMetadataCID) {
         return res.status(400).json({
@@ -601,20 +641,32 @@ const jobController = {
           reconcile.job?.clientAddress === clientAddress ||
           normalizeAddr(onchainClientAddress) === normalizeAddr(clientAddress)
         ) {
-          const adopted =
-            reconcile.action === 'collision' &&
-            normalizeAddr(onchainClientAddress) === normalizeAddr(clientAddress)
-              ? await adoptOrMergeJob(reconcile.job, fields)
-              : reconcile.job;
+          const adopted = await adoptOrInsertJobAfterRace(
+            reconcile,
+            fields,
+            jobId,
+            clientAddress,
+            onchainClientAddress,
+          );
+          if (!adopted) {
+            return res.status(409).json({
+              success: false,
+              code: 'ONCHAIN_JOB_ID_COLLISION',
+              error: `On-chain job id ${jobId} could not be linked to your account.`,
+              onchainJobId: jobId,
+              hint:
+                'Use POST /api/jobs/sync-onchain with the same metadata to adopt the MongoDB row.',
+            });
+          }
           return res.status(200).json({
             success: true,
             message: 'Job already registered for this wallet',
             jobId,
             onchainJobId: jobId,
             onchainClientAddress,
-            metadataCID: adopted.metadataCID,
+            metadataCID: adopted.metadataCID || resolvedMetadataCID,
             job: adopted,
-            reconciled: reconcile.action === 'collision',
+            reconciled: true,
           });
         }
         return res.status(409).json({
@@ -664,9 +716,12 @@ const jobController = {
             'If this persists, run scripts/migrate-job-registry-index.js or contact support.',
         });
       }
-      res.status(500).json({ 
-        success: false, 
-        error: error.message 
+      const message = /metadataCID/i.test(error.message)
+        ? 'Could not register job metadata — upload to IPFS again and retry, or use Sync on-chain job.'
+        : error.message;
+      res.status(500).json({
+        success: false,
+        error: message,
       });
     }
   },
@@ -741,7 +796,7 @@ const jobController = {
         });
       }
 
-      const chainMetadataCID = onChainJob.metadataCID || onChainJob.jobMetadataCID || null;
+      const chainMetadataCID = onChainJob?.metadataCID || onChainJob?.jobMetadataCID || null;
       const resolvedMetadataCID = metadataCID || chainMetadataCID;
       if (!resolvedMetadataCID) {
         return res.status(400).json({
@@ -777,16 +832,55 @@ const jobController = {
       );
 
       if (reconcile.action === 'collision' || reconcile.action === 'duplicate') {
-        const job = await adoptOrMergeJob(reconcile.job, fields);
+        if (
+          reconcile.job &&
+          !canAdoptJobForClient(reconcile.job, clientAddress, onchainClientAddress)
+        ) {
+          return res.status(409).json({
+            success: false,
+            code: 'ONCHAIN_JOB_ID_COLLISION',
+            error: `On-chain job id ${jobId} belongs to another account in MongoDB.`,
+            onchainJobId: jobId,
+            hint:
+              'If JobRegistry was redeployed, run scripts/migrate-job-registry-index.js with LEGACY_JOB_REGISTRY_ADDRESS.',
+          });
+        }
+
+        const job = await adoptOrInsertJobAfterRace(
+          reconcile,
+          fields,
+          jobId,
+          clientAddress,
+          onchainClientAddress,
+        );
+        if (!job) {
+          return res.status(409).json({
+            success: false,
+            code: 'ONCHAIN_JOB_ID_COLLISION',
+            error: `On-chain job id ${jobId} could not be synced to your account.`,
+            onchainJobId: jobId,
+            hint: 'Retry sync-onchain or contact support if you own this job on-chain.',
+          });
+        }
+
         return res.status(200).json({
           success: true,
           message: 'Job synced from on-chain state',
           jobId,
           onchainJobId: jobId,
           onchainClientAddress,
-          metadataCID: resolvedMetadataCID,
+          metadataCID: job.metadataCID || resolvedMetadataCID,
           reconciled: true,
           job,
+        });
+      }
+
+      if (!reconcile.job) {
+        return res.status(500).json({
+          success: false,
+          code: 'JOB_SYNC_FAILED',
+          error: 'Job reconcile succeeded but no MongoDB row was returned.',
+          hint: 'Retry sync-onchain or POST /api/jobs with the same onchainJobId.',
         });
       }
 
@@ -806,7 +900,10 @@ const jobController = {
       });
     } catch (error) {
       logger.error('Sync onchain job error:', error);
-      res.status(500).json({ success: false, error: error.message });
+      const message = /metadataCID/i.test(error.message)
+        ? 'Could not link job metadata — re-upload IPFS metadata and retry sync-onchain.'
+        : error.message;
+      res.status(500).json({ success: false, error: message });
     }
   },
 
