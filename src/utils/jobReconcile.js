@@ -165,7 +165,7 @@ async function adoptOrMergeJob(existingJob, fields) {
 
 /**
  * Align MongoDB with a live JobRegistry read on job detail / browse.
- * Clears stale assignment and accepted bids when chain reports OPEN.
+ * Clears stale assignment when chain reports OPEN; syncs winning bid when assigned on-chain.
  */
 async function reconcileJobFromChainRead(job, onchain) {
   if (!job || !onchain?.onchainStatus) {
@@ -215,15 +215,7 @@ async function reconcileJobFromChainRead(job, onchain) {
         warnings.push({ code: 'STALE_STATUS_RESET', previousStatus });
       }
     }
-    const staleAccepted = await Bid.countDocuments({ jobId: job._id, status: 'accepted' });
-    if (staleAccepted > 0) {
-      await Bid.updateMany(
-        { jobId: job._id, status: 'accepted' },
-        { $set: { status: 'rejected' } },
-      );
-      warnings.push({ code: 'STALE_ACCEPTED_BIDS_REJECTED', count: staleAccepted });
-      updated = true;
-    }
+    // Accepted bids while chain is OPEN are valid (client accepted, awaiting depositEscrow).
   } else if (onchain.onchainFreelancerAddress) {
     const norm = normalizeAddr(onchain.onchainFreelancerAddress);
     if (job.onchainFreelancerAddress !== onchain.onchainFreelancerAddress) {
@@ -234,6 +226,19 @@ async function reconcileJobFromChainRead(job, onchain) {
       job.freelancerAddress = norm;
       updated = true;
     }
+
+    const winnerSync = await Bid.updateMany(
+      { jobId: job._id, freelancerAddress: norm, status: { $in: ['pending', 'rejected'] } },
+      { $set: { status: 'accepted' } },
+    );
+    if (winnerSync.modifiedCount > 0) {
+      updated = true;
+      warnings.push({ code: 'WINNING_BID_ACCEPTED_FROM_CHAIN', count: winnerSync.modifiedCount });
+    }
+    await Bid.updateMany(
+      { jobId: job._id, freelancerAddress: { $ne: norm }, status: 'pending' },
+      { $set: { status: 'rejected' } },
+    );
   }
 
   if (updated) {
