@@ -79,7 +79,9 @@ function formatSiweVerifyError(err, context = {}) {
       parts.push('Request POST /api/auth/nonce again and sign immediately — each nonce is single-use.');
     }
     if (inner.type === 'Domain does not match') {
-      parts.push(`SIWE_DOMAIN in backend .env must be "${getSiweDomain()}" (hostname only, not APP_URL).`);
+      parts.push(
+        `SIWE_DOMAIN in backend .env must match the frontend hostname (e.g. frontend-smoky-eight-51.vercel.app). Current SIWE_DOMAIN="${getSiweDomain()}". The browser signs with window.location.host — Railway API domain must NOT be used.`,
+      );
     }
 
     return parts.join(' — ');
