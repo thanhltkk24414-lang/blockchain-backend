@@ -4,7 +4,8 @@ const IndexerState = require('../models/IndexerState');
 const contractService = require('../services/blockchain/contractService');
 const { hydrateEvidenceContent } = require('../utils/evidenceHydrate');
 const { ensureDisputeForOnchainJob } = require('../utils/disputeUpsert');
-const { applyCurrentRegistryScope } = require('../utils/jobScope');
+const { applyBrowseRegistryScope } = require('../utils/jobScope');
+const { buildDisputedJobsMongoFilter } = require('../utils/browseJobs');
 
 function contractEnvFromProcess() {
   return {
@@ -53,7 +54,7 @@ async function getStats(req, res) {
   try {
     const [total, disputed, byStatusAgg, indexerDoc] = await Promise.all([
       Job.countDocuments(),
-      Job.countDocuments({ status: 'DISPUTED' }),
+      Job.countDocuments({ $or: [{ status: 'DISPUTED' }, { isDisputed: true }] }),
       Job.aggregate([{ $group: { _id: '$status', count: { $sum: 1 } } }]),
       IndexerState.findOne({ id: 'lastBlock' }).lean(),
     ]);
@@ -84,9 +85,7 @@ async function getQuorumFailedJobs(req, res) {
   }
 
   try {
-    const disputedJobs = await Job.find(
-      applyCurrentRegistryScope({ status: 'DISPUTED', onchainJobId: { $exists: true, $ne: null } }),
-    )
+    const disputedJobs = await Job.find(applyBrowseRegistryScope(buildDisputedJobsMongoFilter()))
       .select('_id title onchainJobId clientAddress freelancerAddress deliverableCID status')
       .lean();
 

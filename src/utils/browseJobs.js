@@ -30,6 +30,14 @@ function buildPublicOpenJobsOrClause() {
 /** Terminal statuses set isActive=false in Job.updateStatus — browse must still list them. */
 const TERMINAL_BROWSE_STATUSES = new Set(['COMPLETED', 'REFUNDED', 'CANCELLED']);
 
+/** Mongo filter for disputed jobs (status drift or indexer-only isDisputed flag). */
+function buildDisputedJobsMongoFilter() {
+  return {
+    onchainJobId: { $exists: true, $ne: null },
+    $or: [{ status: 'DISPUTED' }, { isDisputed: true }],
+  };
+}
+
 function applyBrowseStatusFilter(baseQuery = {}, status) {
   const query = { ...baseQuery };
   if (!status) {
@@ -46,7 +54,7 @@ function applyBrowseStatusFilter(baseQuery = {}, status) {
   }
 
   if (normalized === 'DISPUTED') {
-    query.isActive = true;
+    delete query.isActive;
     query.$or = [{ status: 'DISPUTED' }, { isDisputed: true }];
     return query;
   }
@@ -101,10 +109,53 @@ async function finalizeBrowseOpenListings(jobs, requestedStatus, contractService
   return listings;
 }
 
+/**
+ * Reconcile DISPUTED browse rows with JobRegistry and hide stale isDisputed flags.
+ */
+async function finalizeBrowseDisputedListings(jobs, requestedStatus, contractService) {
+  const normalized = requestedStatus ? String(requestedStatus).toUpperCase() : '';
+  if (normalized !== 'DISPUTED' || !contractService?.getOnchainJobView) {
+    return jobs.map((job) => mapJobForBrowseListing(job, requestedStatus));
+  }
+
+  const { reconcileJobFromChainRead } = require('./jobReconcile');
+  const listings = [];
+
+  for (const job of jobs) {
+    const json = mapJobForBrowseListing(job, requestedStatus);
+    if (!contractService.isValidOnchainJobId?.(json.onchainJobId)) {
+      listings.push(json);
+      continue;
+    }
+
+    try {
+      const view = await contractService.getOnchainJobView(json.onchainJobId);
+      if (view?.onchainStatus === 'DISPUTED') {
+        if (typeof job.save === 'function') {
+          await reconcileJobFromChainRead(job, view);
+          listings.push(mapJobForBrowseListing(job, requestedStatus));
+        } else {
+          listings.push({ ...json, status: 'DISPUTED', isDisputed: true });
+        }
+      } else if (view?.onchainStatus && view.onchainStatus !== 'DISPUTED') {
+        continue;
+      } else {
+        listings.push(json);
+      }
+    } catch {
+      listings.push(json);
+    }
+  }
+
+  return listings;
+}
+
 module.exports = {
   isPendingEscrowJob,
   buildPublicOpenJobsOrClause,
+  buildDisputedJobsMongoFilter,
   applyBrowseStatusFilter,
   mapJobForBrowseListing,
   finalizeBrowseOpenListings,
+  finalizeBrowseDisputedListings,
 };

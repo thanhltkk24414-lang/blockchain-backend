@@ -7,6 +7,7 @@ const assert = require('assert');
 const {
   canAdoptJobForClient,
   shouldClearAssignmentOnOpenChain,
+  reconcileJobFromChainRead,
 } = require('../src/utils/jobReconcile');
 
 function testAdoptWhenOnchainClientMatchesApi() {
@@ -70,9 +71,31 @@ function testClearAssignmentWhenChainOpenButMongoAssigned() {
   );
 }
 
+async function testReconcileDisputedFromChain() {
+  const job = {
+    status: 'SUBMITTED',
+    isDisputed: false,
+    statusHistory: [],
+    onchainJobId: 17,
+    save: async function save() {
+      this.saved = true;
+    },
+  };
+  const result = await reconcileJobFromChainRead(job, { onchainStatus: 'DISPUTED' });
+  assert.strictEqual(result.updated, true);
+  assert.strictEqual(job.status, 'DISPUTED');
+  assert.strictEqual(job.isDisputed, true);
+  assert.ok(job.statusHistory.some((row) => row.status === 'DISPUTED'));
+}
+
 testAdoptWhenOnchainClientMatchesApi();
 testRejectUnrelatedOwner();
 testIndexerStubAdopt();
 testChainOwnerOverridesStaleDbClient();
 testClearAssignmentWhenChainOpenButMongoAssigned();
-console.log('test-job-reconcile: OK');
+void testReconcileDisputedFromChain().then(() => {
+  const contractService = require('../src/services/blockchain/contractService');
+  assert.strictEqual(contractService.isChainStatusAhead('DISPUTED', 'SUBMITTED'), true);
+  assert.strictEqual(contractService.isChainStatusAhead('SUBMITTED', 'DISPUTED'), false);
+  console.log('test-job-reconcile: OK');
+});

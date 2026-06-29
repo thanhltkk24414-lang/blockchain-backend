@@ -69,12 +69,26 @@ function isDuplicateKeyError(error) {
   return error?.code === 11000 || error?.code === 11001;
 }
 
+/**
+ * Indexer / dispute events: active registry row, or legacy rows missing jobRegistryAddress.
+ * Avoids missing DisputeRaised when Mongo predates registry scoping.
+ */
+function indexerJobLookupFilter(onchainJobId, registryAddress = getJobRegistryAddress()) {
+  const filter = { onchainJobId: Number(onchainJobId) };
+  if (!registryAddress) return filter;
+  return {
+    onchainJobId: Number(onchainJobId),
+    $or: buildUnscopedRegistryOrClause(registryAddress),
+  };
+}
+
 module.exports = {
   getChainId,
   getJobRegistryAddress,
   getLegacyJobRegistryAddress,
   buildUnscopedRegistryOrClause,
   jobLookupFilter,
+  indexerJobLookupFilter,
   attachJobScope,
   applyCurrentRegistryScope,
   applyBrowseRegistryScope,

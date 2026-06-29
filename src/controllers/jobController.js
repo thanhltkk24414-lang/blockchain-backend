@@ -20,6 +20,7 @@ const {
 const {
   applyBrowseStatusFilter,
   finalizeBrowseOpenListings,
+  finalizeBrowseDisputedListings,
 } = require('../utils/browseJobs');
 
 function resolveChainMetadata(onChainJob, requestMetadataCID) {
@@ -100,7 +101,8 @@ const jobController = {
         .limit(parseInt(limit))
         .populate('client', 'walletAddress username profile.fullName reputation');
 
-      const jobs = await finalizeBrowseOpenListings(jobsRaw, status, contractService);
+      let jobs = await finalizeBrowseOpenListings(jobsRaw, status, contractService);
+      jobs = await finalizeBrowseDisputedListings(jobs, status, contractService);
 
       const total = await Job.countDocuments(query);
 
@@ -152,7 +154,8 @@ const jobController = {
         .limit(50)
         .populate('client', 'walletAddress username profile.fullName reputation');
 
-      const jobs = await finalizeBrowseOpenListings(jobsRaw, requestedStatus, contractService);
+      let jobs = await finalizeBrowseOpenListings(jobsRaw, requestedStatus, contractService);
+      jobs = await finalizeBrowseDisputedListings(jobs, requestedStatus, contractService);
 
       res.json({
         success: true,
