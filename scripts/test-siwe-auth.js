@@ -14,6 +14,12 @@ const http = require('http');
 const https = require('https');
 const { Wallet, getAddress } = require('ethers');
 const { SiweMessage } = require('siwe');
+const {
+  parseAllowedSiweDomains,
+  matchSiweDomainPattern,
+  isAllowedSiweDomain,
+  isAllowedSiweUri,
+} = require('../src/utils/siweDomains');
 
 const domain = process.env.SIWE_DOMAIN || 'localhost';
 const uri = process.env.APP_URL || 'http://localhost:3000';
@@ -22,6 +28,10 @@ const baseUrl = process.env.BASE_URL || 'http://127.0.0.1:5000';
 const statement = 'Sign in to Fapex';
 const userWalletLower = '0x523ebd853a1638065f148a05c0ca423e490d92f7';
 const userWalletChecksum = getAddress(userWalletLower);
+
+function assert(condition, message) {
+  if (!condition) throw new Error(message);
+}
 
 function request(method, path, body) {
   return new Promise((resolve, reject) => {
@@ -66,7 +76,54 @@ function request(method, path, body) {
   });
 }
 
+function runDomainAllowlistTests() {
+  console.log('--- SIWE domain allowlist ---');
+
+  assert(
+    parseAllowedSiweDomains('a.example.com, b.example.com').join('|') ===
+      'a.example.com|b.example.com',
+    'parse comma-separated domains',
+  );
+
+  assert(
+    isAllowedSiweDomain('frontend-smoky-eight-51.vercel.app', [
+      'fapex-backend-production.up.railway.app',
+      'frontend-smoky-eight-51.vercel.app',
+    ]),
+    'exact match in comma-separated list',
+  );
+
+  assert(
+    !isAllowedSiweDomain('evil.example.com', [
+      'fapex-backend-production.up.railway.app',
+      'frontend-smoky-eight-51.vercel.app',
+    ]),
+    'reject domain not in list',
+  );
+
+  assert(
+    matchSiweDomainPattern('preview-abc.vercel.app', '*.vercel.app'),
+    'wildcard *.vercel.app matches preview',
+  );
+
+  assert(
+    isAllowedSiweUri('https://frontend-smoky-eight-51.vercel.app/login', [
+      'frontend-smoky-eight-51.vercel.app',
+    ]),
+    'URI host matches allowed domain',
+  );
+
+  assert(
+    isAllowedSiweUri('http://localhost:3000', ['localhost']),
+    'URI with port matches localhost allowlist',
+  );
+
+  console.log('OK: domain allowlist checks');
+}
+
 async function runUnitTests() {
+  runDomainAllowlistTests();
+
   const nonce = 'a1b2c3d4e5f6789012345678901234ab';
   const msg = new SiweMessage({
     domain,
@@ -160,7 +217,8 @@ async function runIntegrationTest() {
   }
 
   const nonce1 = await issueNonce();
-  console.log('OK: nonce issued');
+  assert(Array.isArray(nonce1.allowedDomains), 'nonce returns allowedDomains');
+  console.log('OK: nonce issued', { domain: nonce1.domain, allowedDomains: nonce1.allowedDomains });
 
   const message = buildMessage(nonce1);
   const signature = await wallet.signMessage(message);

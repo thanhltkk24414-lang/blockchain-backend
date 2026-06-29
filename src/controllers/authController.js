@@ -4,13 +4,15 @@ const { SiweMessage } = require('siwe');
 const User = require('../models/User');
 const logger = require('../utils/logger');
 const { generateToken } = require('../middleware/auth');
+const {
+  getAllowedSiweDomains,
+  getPrimarySiweDomain,
+  isAllowedSiweDomain,
+  isAllowedSiweUri,
+} = require('../utils/siweDomains');
 
 function normalizeAddress(address) {
   return getAddress(address).toLowerCase();
-}
-
-function getSiweDomain() {
-  return process.env.SIWE_DOMAIN || 'localhost';
 }
 
 function getAppUrl() {
@@ -80,7 +82,7 @@ function formatSiweVerifyError(err, context = {}) {
     }
     if (inner.type === 'Domain does not match') {
       parts.push(
-        `SIWE_DOMAIN in backend .env must match the frontend hostname (e.g. frontend-smoky-eight-51.vercel.app). Current SIWE_DOMAIN="${getSiweDomain()}". The browser signs with window.location.host — Railway API domain must NOT be used.`,
+        `SIWE_DOMAIN must include the frontend hostname (e.g. frontend-smoky-eight-51.vercel.app). Allowed: ${getAllowedSiweDomains().join(', ')}. The browser signs with window.location.host — Railway API domain must NOT be used.`,
       );
     }
 
@@ -129,7 +131,8 @@ const authController = {
         success: true,
         nonce: user.nonce,
         walletAddress: getAddress(walletAddress),
-        domain: getSiweDomain(),
+        domain: getPrimarySiweDomain(),
+        allowedDomains: getAllowedSiweDomains(),
         appUrl: getAppUrl(),
         chainId: getChainId(),
       });
@@ -201,13 +204,27 @@ const authController = {
       }
 
       const expectedChainId = getChainId();
-      const expectedDomain = getSiweDomain();
+      const messageDomain = siweMessage.domain;
+
+      if (!isAllowedSiweDomain(messageDomain)) {
+        return res.status(401).json({
+          success: false,
+          error: `Domain mismatch: message has "${messageDomain}", allowed SIWE_DOMAIN values: ${getAllowedSiweDomains().join(', ')}.`,
+        });
+      }
+
+      if (!isAllowedSiweUri(siweMessage.uri)) {
+        return res.status(401).json({
+          success: false,
+          error: `URI mismatch: message has "${siweMessage.uri}", host must match an allowed SIWE_DOMAIN.`,
+        });
+      }
 
       const verifyResult = await siweMessage.verify(
         {
           signature,
           nonce: user.nonce,
-          domain: expectedDomain,
+          domain: messageDomain,
           time: new Date(),
         },
         { suppressExceptions: true }
@@ -228,13 +245,6 @@ const authController = {
         return res.status(401).json({
           success: false,
           error: `Invalid chain ID in message (${data.chainId}). Expected ${expectedChainId} — match CHAIN_ID in backend .env.`,
-        });
-      }
-
-      if (data.domain !== expectedDomain) {
-        return res.status(401).json({
-          success: false,
-          error: `Domain mismatch: message has "${data.domain}", server expects "${expectedDomain}" (SIWE_DOMAIN).`,
         });
       }
 
