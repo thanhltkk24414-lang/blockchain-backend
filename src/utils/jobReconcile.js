@@ -195,7 +195,23 @@ async function reconcileJobFromChainRead(job, onchain) {
 
   const chainStatus = String(onchain.onchainStatus).toUpperCase();
 
-  if (chainStatus === 'OPEN') {
+  if (chainStatus === 'DISPUTED') {
+    if (!job.isDisputed) {
+      job.isDisputed = true;
+      updated = true;
+    }
+    if (job.status !== 'DISPUTED') {
+      const previousStatus = job.status;
+      job.status = 'DISPUTED';
+      job.statusHistory = job.statusHistory || [];
+      job.statusHistory.push({
+        status: 'DISPUTED',
+        note: 'Synced to DISPUTED from on-chain reconcile',
+      });
+      updated = true;
+      warnings.push({ code: 'DISPUTED_STATUS_SYNC', previousStatus });
+    }
+  } else if (chainStatus === 'OPEN') {
     if (shouldClearAssignmentOnOpenChain(chainStatus, job.status, job.freelancerAddress || job.onchainFreelancerAddress)) {
       if (job.freelancerAddress || job.onchainFreelancerAddress) {
         job.freelancerAddress = undefined;

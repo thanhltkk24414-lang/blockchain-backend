@@ -20,7 +20,7 @@ const STATUS_RANK = {
   ASSIGNED: 1,
   IN_PROGRESS: 2,
   SUBMITTED: 3,
-  DISPUTED: 3,
+  DISPUTED: 4,
   COMPLETED: 5,
   REFUNDED: 6,
   CANCELLED: 7,
@@ -744,19 +744,15 @@ class ContractService {
   }
 
   async assessQuorumFailed(jobId, nowSec = Math.floor(Date.now() / 1000)) {
-    const { DISPUTE_QUORUM, revealEndSec } = require('../../utils/disputeTimings');
+    const { DISPUTE_QUORUM } = require('../../utils/disputeTimings');
+    const { isQuorumFailedOnChainDispute } = require('../../utils/quorumFailed');
     const onchainJob = await this.getJob(jobId);
     if (!onchainJob || onchainJob.status !== 4) {
       return null;
     }
 
     const dispute = await this.getOnchainDispute(jobId);
-    if (!dispute?.createdAt) return null;
-
-    const revealEnded = nowSec > revealEndSec(dispute.createdAt);
-    if (!revealEnded) return null;
-    if (dispute.revealCount >= DISPUTE_QUORUM) return null;
-    if (dispute.isResolved && dispute.pendingResult > 0) return null;
+    if (!isQuorumFailedOnChainDispute(dispute, nowSec)) return null;
 
     return {
       onchainJobId: Number(jobId),

@@ -18,7 +18,8 @@
     "test:role-applications": "node scripts/test-role-applications.js",
     "test:job-reconcile": "node scripts/test-job-reconcile.js",
     "test:dispute-evidence": "node scripts/test-dispute-evidence-upsert.js",
-    "test:browse-jobs": "node scripts/test-browse-jobs.js"
+    "test:browse-jobs": "node scripts/test-browse-jobs.js",
+    "test:quorum-failed": "node scripts/test-quorum-failed.js"
   },
   "repository": {
     "type": "git",

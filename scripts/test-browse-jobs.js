@@ -24,7 +24,15 @@ function testCompletedFilter() {
 
 function testDisputedFilter() {
   const q = applyBrowseStatusFilter({}, 'DISPUTED');
-  assert.strictEqual(q.isActive, true);
+  assert.strictEqual(q.isActive, undefined);
+  assert.ok(q.$or.some((c) => c.status === 'DISPUTED'));
+  assert.ok(q.$or.some((c) => c.isDisputed === true));
+}
+
+function testDisputedJobsMongoFilter() {
+  const { buildDisputedJobsMongoFilter } = require('../src/utils/browseJobs');
+  const q = buildDisputedJobsMongoFilter();
+  assert.ok(q.onchainJobId);
   assert.ok(q.$or.some((c) => c.status === 'DISPUTED'));
   assert.ok(q.$or.some((c) => c.isDisputed === true));
 }
@@ -38,5 +46,6 @@ function testPublicOpenClause() {
 testOpenFilter();
 testCompletedFilter();
 testDisputedFilter();
+testDisputedJobsMongoFilter();
 testPublicOpenClause();
 console.log('test-browse-jobs: OK');
