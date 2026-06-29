@@ -54,6 +54,13 @@ router.get(
 );
 
 router.get(
+  '/onchain/:onchainJobId',
+  [param('onchainJobId').isInt({ min: 1 }).withMessage('Invalid on-chain job ID')],
+  validate,
+  jobController.getJobByOnchainId
+);
+
+router.get(
   '/:id/onchain-debug',
   [
     param('id').isMongoId().withMessage('Invalid job ID'),
