@@ -6,7 +6,7 @@ Submodule của monorepo [`Blockchain`](../README.md).
 
 **Production:** https://fapex-backend-production.up.railway.app
 
-**Cập nhật:** 2026-06-28
+**Cập nhật:** 2026-06-30
 
 ---
 
