@@ -156,7 +156,12 @@ const userController = {
 
       res.json({
         success: true,
-        stats: user.stats,
+        stats: {
+          jobsPosted: user.stats.jobsPosted,
+          jobsCompleted: computed.jobsCompleted,
+          totalEarned: computed.totalEarned,
+          earningsByMonth: computed.earningsByMonth,
+        },
         reputation: {
           score: user.reputation.score,
           tier: user.reputation.tier,

@@ -235,6 +235,44 @@ const jobController = {
   },
 
   /**
+   * GET /api/jobs/onchain/:onchainJobId
+   * Resolve job by on-chain id (scoped to active JobRegistry).
+   */
+  getJobByOnchainId: async (req, res) => {
+    try {
+      const onchainJobId = Number(req.params.onchainJobId);
+      if (!contractService.isValidOnchainJobId(onchainJobId)) {
+        return res.status(400).json({
+          success: false,
+          error: 'Invalid on-chain job id',
+        });
+      }
+
+      const { jobLookupFilter } = require('../utils/jobScope');
+      let job = await Job.findOne(jobLookupFilter(onchainJobId));
+      if (!job) {
+        job = await Job.findOne({ onchainJobId });
+      }
+
+      if (!job) {
+        return res.status(404).json({
+          success: false,
+          error: 'Job not found',
+        });
+      }
+
+      req.params.id = job._id.toString();
+      return jobController.getJobById(req, res);
+    } catch (error) {
+      logger.error('Get job by onchain id error:', error);
+      res.status(500).json({
+        success: false,
+        error: error.message,
+      });
+    }
+  },
+
+  /**
    * GET /api/jobs/:id/onchain-debug
    * Full chain state + staticCall preflight for support.
    */
